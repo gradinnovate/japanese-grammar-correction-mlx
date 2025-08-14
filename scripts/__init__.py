@@ -1,0 +1,1 @@
+# Scripts package for Japanese Grammar Correction system

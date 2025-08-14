@@ -1,0 +1,30 @@
+# Prompt Configuration for Japanese Grammar Correction
+# This file controls the default prompt language settings
+
+# Default prompt language settings
+default_prompt_language: "english"  # Options: "japanese", "english"
+
+# Model-specific prompt settings
+model_prompt_settings:
+  "0.6B": "english"    # Smaller models work better with English prompts
+  "1.5B": "japanese"   # Larger models can handle Japanese prompts better
+  "1.7B": "japanese"   # Larger models can handle Japanese prompts better
+
+# Training settings
+training:
+  use_english_prompts: true  # Use English prompts for training by default
+  
+# Evaluation settings  
+evaluation:
+  use_english_prompts: true  # Use English prompts for evaluation by default
+  
+# Inference settings
+inference:
+  use_english_prompts: true  # Use English prompts for inference by default
+
+# Prompt templates (can be overridden)
+custom_prompts:
+  system_japanese: "あなたは日本語の文法修正を専門とするAIアシスタントです。与えられた文章の文法エラーを正確に修正してください。"
+  system_english: "You are a Japanese grammar correction assistant. Correct grammatical errors in Japanese sentences."
+  user_japanese: "次の日本語文を文法的に正しく修正してください：{input_text}"
+  user_english: "Please correct the grammar in the following Japanese sentence: {input_text}"

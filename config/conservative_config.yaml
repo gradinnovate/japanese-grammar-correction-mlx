@@ -1,0 +1,37 @@
+# Conservative Configuration for Japanese Grammar Correction
+# Using safer parameters to avoid overfitting
+
+model: "mlx-community/Qwen3-0.6B-4bit"
+train: "datasets/train.jsonl"
+valid: "datasets/valid.jsonl"
+adapter_path: "models/japanese-gec-lora-conservative"
+
+# Conservative LoRA parameters
+lora_rank: 16  # Smaller rank to prevent overfitting
+lora_alpha: 16  # 2x rank
+lora_dropout: 0.1
+lora_layers: 16
+
+# Conservative training parameters
+batch_size: 4  # Larger batch for stability
+learning_rate: 1e-5  # Much lower learning rate
+iters: 1000  # Fewer iterations
+val_batches: 25
+steps_per_report: 10
+steps_per_eval: 50
+steps_per_save: 100
+
+# Generation parameters
+max_tokens: 150
+temperature: 0.3
+repetition_penalty: 1.1
+
+# Evaluation settings
+eval_steps: 50
+save_steps: 100
+logging_steps: 10
+
+# Data processing
+max_seq_length: 512
+truncation: true
+padding: true

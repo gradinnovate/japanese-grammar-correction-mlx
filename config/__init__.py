@@ -1,0 +1,1 @@
+# Configuration package for Japanese Grammar Correction system
