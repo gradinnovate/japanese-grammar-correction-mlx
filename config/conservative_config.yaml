@@ -9,13 +9,13 @@ adapter_path: "models/japanese-gec-detect-v4"
 num_layers: 16  # Number of layers to fine-tune
 lora_parameters:
   rank: 16  # LoRA rank for good representation without overfitting
-  scale: 32  # LoRA scale (typically 2x rank)
-  dropout: 0.1  # Moderate dropout for better generalization
+  scale: 16  # Reduced scale for more stable training
+  dropout: 0.05  # Lower dropout for better learning stability
 
-# Precision-focused training parameters
-batch_size: 4  # Smaller batch for more precise gradient updates
-learning_rate: 2e-5  # Moderate learning rate for stable convergence
-iters: 2000  # More iterations with slower learning for precision
+# Stable training parameters for consistent performance
+batch_size: 8  # Larger batch for more stable gradients
+learning_rate: 1e-5  # Lower learning rate for stable convergence
+iters: 4000  # Extended training with stable learning
 val_batches: 50  # Regular validation monitoring
 steps_per_report: 20
 steps_per_eval: 100  # Frequent evaluation for early stopping
@@ -47,12 +47,12 @@ optimizer_config:
   adamw:
     weight_decay: 0.01  # Standard weight decay for regularization
 
-# Conservative learning rate schedule for precision
-lr_schedule:
-  name: "cosine_decay"
-  arguments: [2e-5, 8000]  # [moderate_lr, extended_steps]
-  warmup: 400  # Long warmup for stable learning
-  warmup_init: 1e-7  # Very gradual start
+# Simplified learning rate schedule for stability
+# lr_schedule:
+#   name: "cosine_decay"
+#   arguments: [1e-5, 4000]  # [lower_lr, matching_steps]
+#   warmup: 200  # Shorter warmup for faster convergence
+#   warmup_init: 1e-6  # Gradual start
 
 # Detection-specific optimizations
 seed: 42  # Fixed seed for reproducible results
