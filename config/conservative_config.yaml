@@ -1,37 +1,58 @@
-# Conservative Configuration for Japanese Grammar Correction
-# Using safer parameters to avoid overfitting
+# Precision-Focused Configuration for Japanese Grammar Error Detection
+# Strategy: Quality over quantity, precise detection patterns
 
 model: "mlx-community/Qwen3-0.6B-4bit"
-train: "datasets/train.jsonl"
-valid: "datasets/valid.jsonl"
-adapter_path: "models/japanese-gec-lora-conservative"
+data_dir: "datasets/gec_error_detection"  # Directory containing train.jsonl, valid.jsonl, test.jsonl
+adapter_path: "models/japanese-gec-detect-v4"
 
-# Conservative LoRA parameters
-lora_rank: 16  # Smaller rank to prevent overfitting
-lora_alpha: 16  # 2x rank
-lora_dropout: 0.1
-lora_layers: 16
+# Balanced LoRA/DoRA parameters for stable learning
+num_layers: 16  # Number of layers to fine-tune
+lora_parameters:
+  rank: 16  # LoRA rank for good representation without overfitting
+  scale: 32  # LoRA scale (typically 2x rank)
+  dropout: 0.1  # Moderate dropout for better generalization
 
-# Conservative training parameters
-batch_size: 4  # Larger batch for stability
-learning_rate: 1e-5  # Much lower learning rate
-iters: 1000  # Fewer iterations
-val_batches: 25
-steps_per_report: 10
-steps_per_eval: 50
-steps_per_save: 100
+# Precision-focused training parameters
+batch_size: 4  # Smaller batch for more precise gradient updates
+learning_rate: 2e-5  # Moderate learning rate for stable convergence
+iters: 2000  # More iterations with slower learning for precision
+val_batches: 50  # Regular validation monitoring
+steps_per_report: 20
+steps_per_eval: 100  # Frequent evaluation for early stopping
+steps_per_save: 200
 
-# Generation parameters
-max_tokens: 150
-temperature: 0.3
-repetition_penalty: 1.1
+# Generation parameters optimized for detection precision
+max_tokens: 300  # Sufficient length for detection patterns
+temperature: 0.01  # Extremely low temperature for deterministic output
+repetition_penalty: 1.0  # No penalty to avoid interfering with detection patterns
 
-# Evaluation settings
-eval_steps: 50
-save_steps: 100
-logging_steps: 10
+# Precision-focused evaluation settings
+eval_steps: 100
+save_steps: 200
+logging_steps: 20
 
-# Data processing
-max_seq_length: 512
+# Optimized data processing for detection task
+max_seq_length: 512  # Balanced context length for most sentences
 truncation: true
 padding: true
+
+# Detection-optimized settings
+fine_tune_type: "dora"  # LoRA for parameter efficiency
+mask_prompt: true  # Focus learning on detection outputs only
+grad_checkpoint: false  # Disable for faster training with smaller config
+
+# Stable optimizer configuration
+optimizer: "adamw"  # AdamW supports weight decay for regularization
+optimizer_config:
+  adamw:
+    weight_decay: 0.01  # Standard weight decay for regularization
+
+# Conservative learning rate schedule for precision
+lr_schedule:
+  name: "cosine_decay"
+  arguments: [2e-5, 8000]  # [moderate_lr, extended_steps]
+  warmup: 400  # Long warmup for stable learning
+  warmup_init: 1e-7  # Very gradual start
+
+# Detection-specific optimizations
+seed: 42  # Fixed seed for reproducible results

@@ -1,229 +1,110 @@
-# Japanese Grammar Correction Evaluation Usage
+# Grammar-Focused Evaluation Usage
 
-This document explains how to use the evaluation metrics calculation system for Japanese Grammar Correction.
+The updated `grammar_focused_evaluation.py` script now uses the centralized prompt management system.
 
-## Overview
+## Features
 
-The evaluation system provides comprehensive metrics for assessing the quality of Japanese grammar correction models, including:
-
-- **Sentence-level accuracy**: Exact match between predicted and expected corrections
-- **Token-level metrics**: Precision, recall, and F1 score at the token level
-- **BLEU score**: Fluency assessment using n-gram overlap
-- **Edit distance metrics**: Character-level edit distance and accuracy
-- **Error analysis**: Breakdown of different types of corrections and failures
+- **Consistent Prompts**: Uses `config/prompts.py` and `config/prompt_config.yaml`
+- **Multi-task Support**: Can filter by task type (FIX, DETECT, CORRECT, ASSESS)
+- **Flexible Configuration**: Command-line arguments for all settings
+- **Detailed Analysis**: Categorizes different types of errors
 
 ## Usage
 
 ### Basic Usage
-
 ```bash
-python scripts/evaluate_gec.py --results-file results/batch_inference_results.jsonl
+python scripts/grammar_focused_evaluation.py
 ```
 
-### Advanced Usage
-
+### Custom Configuration
 ```bash
-python scripts/evaluate_gec.py \
-    --results-file results/batch_inference_results.jsonl \
-    --output-file results/my_evaluation_report.json \
-    --log-level DEBUG \
-    --log-file logs/evaluation.log
+python scripts/grammar_focused_evaluation.py \
+  --model-path models/my-model \
+  --test-data datasets/combined/test.jsonl \
+  --max-examples 100 \
+  --task-filter FIX \
+  --prompt-config config/prompt_config.yaml
 ```
 
-### Command Line Arguments
+### Available Options
 
-- `--results-file`: Path to batch inference results file (JSONL format) - **Required**
-- `--output-file`: Path to save evaluation report (default: `results/evaluation_report.json`)
-- `--log-level`: Logging level (DEBUG, INFO, WARNING, ERROR) (default: INFO)
-- `--log-file`: Path to log file (default: `logs/evaluation.log`)
+- `--model-path`: Path to trained model adapters (default: `models/japanese-gec-v1`)
+- `--base-model`: Base model to use (default: `mlx-community/Qwen3-0.6B-4bit`)
+- `--test-data`: Path to test data (default: `datasets/combined/test.jsonl`)
+- `--max-examples`: Maximum examples to evaluate (default: 50)
+- `--task-filter`: Task type to filter - FIX, DETECT, CORRECT, ASSESS (default: FIX)
+- `--prompt-config`: Path to prompt configuration (default: `config/prompt_config.yaml`)
 
-## Input Format
+## Task Types and Metrics
 
-The evaluation script expects a JSONL file where each line contains a JSON object with the following structure:
+### **FIX** (End-to-end Grammar Correction)
+- **Primary Metric**: Exact match accuracy
+- **Analysis**: Error categorization (perfect corrections, missed corrections, etc.)
+- **Focus**: Whether the model produces the exact expected correction
 
-```json
-{
-    "input": "山下先生は母をしています。",
-    "expected": "山下先生は母をご存知です。",
-    "predicted": "山下先生は母をご存知です。",
-    "example_id": 1
-}
-```
+### **DETECT** (Error Detection with Marking)
+- **Primary Metrics**: Precision, Recall, F1-Score
+- **Analysis**: Error detection performance at token level
+- **Focus**: How well the model identifies and marks errors with `<>` brackets
 
-For failed predictions, include an `error` field:
+### **CORRECT** (Correction of Marked Errors)
+- **Primary Metric**: Exact match accuracy
+- **Analysis**: Correction completion rate (removing markers)
+- **Focus**: Whether the model correctly fixes marked errors
 
-```json
-{
-    "input": "エラーのある文",
-    "expected": "修正された文",
-    "predicted": "エラーのある文",
-    "example_id": 2,
-    "error": "Generation failed"
-}
-```
+### **ASSESS** (Quality Assessment)
+- **Primary Metrics**: Score accuracy, Mean Absolute Error (MAE)
+- **Analysis**: Close predictions (±0.5 score difference)
+- **Focus**: How accurately the model predicts quality scores (1-4)
 
 ## Output
 
-The evaluation script generates two output files:
+The script provides task-specific analysis:
 
-### 1. Detailed JSON Report
+### FIX Task Output
+- Exact match accuracy
+- Error breakdown by category
+- Examples of missed/incorrect corrections
 
-Contains comprehensive metrics and analysis:
+### DETECT Task Output  
+- Average Precision, Recall, F1-Score
+- Perfect detection rate
+- Error marking analysis
 
-```json
-{
-  "evaluation_summary": {
-    "timestamp": "2025-08-14 00:32:46",
-    "total_examples": 100,
-    "successful_predictions": 95
-  },
-  "sentence_level_metrics": {
-    "exact_match_accuracy": 0.75,
-    "perfect_matches": 75,
-    "perfect_match_rate": 0.75
-  },
-  "token_level_metrics": {
-    "precision": 0.85,
-    "recall": 0.82,
-    "f1_score": 0.835
-  },
-  "fluency_metrics": {
-    "bleu_score": 0.68
-  },
-  "edit_distance_metrics": {
-    "normalized_edit_distance": 0.12,
-    "edit_accuracy": 0.88
-  },
-  "error_analysis": {
-    "perfect_matches": 75,
-    "partial_corrections": 15,
-    "no_corrections": 5,
-    "overcorrections": 0,
-    "failed_predictions": 5
-  }
-}
-```
+### CORRECT Task Output
+- Correction completion rate
+- Marker removal success
+- Final output accuracy
 
-### 2. Human-Readable Summary
+### ASSESS Task Output
+- Score prediction accuracy
+- Mean Absolute Error
+- Close prediction rate (±0.5)
 
-A text file with formatted metrics for easy reading:
+## Integration with Prompt System
 
-```
-Japanese Grammar Correction Evaluation Report
-==================================================
+The script automatically:
+1. Loads prompt configuration from YAML
+2. Determines language (English/Japanese) from config
+3. Uses task-specific system prompts and user prompts for each evaluation type:
 
-Evaluation Date: 2025-08-14 00:32:46
-Total Examples: 100
-Successful Predictions: 95
+   **System Prompts:**
+   - **FIX**: "You are a Japanese grammar correction specialist. Correct grammatical errors..."
+   - **DETECT**: "You are a Japanese grammar error detection specialist. Mark grammatical errors..."
+   - **CORRECT**: "You are a Japanese grammar correction specialist. Correct the grammatical errors marked..."
+   - **ASSESS**: "You are a Japanese grammar correction quality assessor. Evaluate the quality..."
 
-SENTENCE-LEVEL METRICS
--------------------------
-Exact Match Accuracy: 0.7500
-Perfect Matches: 75
-Perfect Match Rate: 0.7500
+   **User Prompts (with task prefixes):**
+   - **FIX**: "[FIX] Correct the grammar in this Japanese sentence: {input_text}"
+   - **DETECT**: "[DETECT] Mark the grammatical errors in this Japanese sentence: {input_text}"
+   - **CORRECT**: "[CORRECT] Correct the marked errors in this Japanese sentence: {input_text}"
+   - **ASSESS**: "[ASSESS] Assess the quality of this correction:\nOriginal: {source_text}\nCorrected: {corrected_text}"
+4. Handles multi-task data format with task prefixes
+5. Maintains consistency with training data prompts
 
-TOKEN-LEVEL METRICS
---------------------
-Precision: 0.8500
-Recall: 0.8200
-F1 Score: 0.8350
+## Prompt Consistency
 
-FLUENCY METRICS
-----------------
-BLEU Score: 0.6800
-
-EDIT DISTANCE METRICS
-----------------------
-Normalized Edit Distance: 0.1200
-Edit Accuracy: 0.8800
-
-ERROR ANALYSIS
----------------
-Perfect Corrections: 75 (75.00%)
-Partial Corrections: 15 (15.00%)
-No Corrections: 5 (5.00%)
-Overcorrections: 0 (0.00%)
-Failed Predictions: 5 (5.00%)
-```
-
-## Metrics Explanation
-
-### Sentence-Level Metrics
-
-- **Exact Match Accuracy**: Percentage of predictions that exactly match the expected output
-- **Perfect Match Rate**: Same as exact match accuracy, but calculated from total examples including failures
-
-### Token-Level Metrics
-
-- **Precision**: Ratio of correct tokens in predictions to total predicted tokens
-- **Recall**: Ratio of correct tokens in predictions to total expected tokens
-- **F1 Score**: Harmonic mean of precision and recall
-
-### Fluency Metrics
-
-- **BLEU Score**: Measures n-gram overlap between predictions and references, with brevity penalty
-
-### Edit Distance Metrics
-
-- **Normalized Edit Distance**: Levenshtein distance normalized by reference length
-- **Edit Accuracy**: 1 - normalized edit distance
-
-### Error Analysis
-
-- **Perfect Corrections**: Predictions that exactly match expected output
-- **Partial Corrections**: Predictions that differ from expected but are not identical to input
-- **No Corrections**: Predictions identical to input (no changes made)
-- **Overcorrections**: Predictions significantly longer than expected (heuristic)
-- **Failed Predictions**: Predictions that failed due to errors
-
-## Example
-
-Run the example script to see the evaluation system in action:
-
-```bash
-python scripts/run_evaluation_example.py
-```
-
-This will create sample data, run evaluation, and generate reports in the `results/` directory.
-
-## Integration with Batch Inference
-
-The evaluation script is designed to work with the output from `scripts/batch_inference.py`:
-
-```bash
-# Step 1: Run batch inference
-python scripts/batch_inference.py \
-    --test-file datasets/test.jsonl \
-    --output-file results/batch_inference_results.jsonl
-
-# Step 2: Evaluate results
-python scripts/evaluate_gec.py \
-    --results-file results/batch_inference_results.jsonl \
-    --output-file results/evaluation_report.json
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **No valid results found**: Check that your results file contains valid JSON objects without errors
-2. **File not found**: Ensure the results file path is correct and the file exists
-3. **Encoding issues**: Make sure your results file is saved with UTF-8 encoding
-
-### Debugging
-
-Use debug logging to get more detailed information:
-
-```bash
-python scripts/evaluate_gec.py \
-    --results-file results/batch_inference_results.jsonl \
-    --log-level DEBUG
-```
-
-## Testing
-
-Run the unit tests to verify the evaluation system:
-
-```bash
-python -m unittest tests.test_evaluate_gec -v
-```
+The evaluation now uses the exact same system prompts as the training data, ensuring:
+- **Accurate evaluation**: Model sees the same instructions during evaluation as training
+- **Task-specific behavior**: Each task gets appropriate specialized prompts
+- **Consistent results**: Eliminates prompt mismatch as a source of evaluation error

@@ -52,12 +52,13 @@ def extract_error_corrections(line: str) -> Tuple[str, str]:
     return error_text, correct_text
 
 
-def validate_corpus_format(line: str) -> bool:
+def validate_corpus_format(line: str, strict_period_check: bool = False) -> bool:
     """
     Validate that a corpus line follows the expected format.
     
     Args:
         line: Single line from corpus file
+        strict_period_check: If True, enforce that sentences end with period "。"
         
     Returns:
         True if format is valid, False otherwise
@@ -79,15 +80,21 @@ def validate_corpus_format(line: str) -> bool:
     if not re.search(r'\([^)]*\)', correct_part):
         return False
     
+    # Optional strict period check as per README specification
+    if strict_period_check:
+        if not error_part.endswith('。') or not correct_part.endswith('。'):
+            return False
+    
     return True
 
 
-def parse_gec_corpus(corpus_path: str) -> List[GECPair]:
+def parse_gec_corpus(corpus_path: str, strict_period_check: bool = False) -> List[GECPair]:
     """
     Parse the Japanese GEC corpus file into error-correction pairs.
     
     Args:
         corpus_path: Path to the tab-separated corpus file
+        strict_period_check: If True, enforce that sentences end with period "。"
         
     Returns:
         List of GECPair objects with extracted error and correction text
@@ -103,7 +110,7 @@ def parse_gec_corpus(corpus_path: str) -> List[GECPair]:
         with open(corpus_path, 'r', encoding='utf-8') as f:
             for line_num, line in enumerate(f, 1):
                 try:
-                    if not validate_corpus_format(line):
+                    if not validate_corpus_format(line, strict_period_check):
                         logger.warning(f"Skipping invalid format at line {line_num}: {line.strip()}")
                         skipped_lines += 1
                         continue

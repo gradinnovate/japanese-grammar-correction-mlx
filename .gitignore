@@ -320,3 +320,7 @@ exclude/
 
 .venv
 .vscode/
+models/
+autojqe_training_data/
+examples/
+training_data/

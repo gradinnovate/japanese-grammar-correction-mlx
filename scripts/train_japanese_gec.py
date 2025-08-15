@@ -13,7 +13,7 @@ import sys
 import time
 import yaml
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -37,8 +37,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
 def validate_config(config: Dict[str, Any]) -> bool:
     """Validate the training configuration."""
     required_keys = [
-        'model', 'lora_rank', 'lora_alpha', 'learning_rate', 
-        'batch_size', 'train', 'valid', 'adapter_path'
+        'model', 'learning_rate', 'batch_size', 'adapter_path'
     ]
     
     for key in required_keys:
@@ -46,10 +45,27 @@ def validate_config(config: Dict[str, Any]) -> bool:
             logging.error(f"Missing required configuration key: {key}")
             return False
     
-    # Validate data files exist
-    for data_key in ['train', 'valid']:
-        if not os.path.exists(config[data_key]):
-            logging.error(f"Data file not found: {config[data_key]}")
+    # Validate LoRA parameters if present
+    if 'lora_parameters' in config:
+        lora_params = config['lora_parameters']
+        required_lora_keys = ['rank', 'scale', 'dropout']
+        for key in required_lora_keys:
+            if key not in lora_params:
+                logging.error(f"Missing required LoRA parameter: {key}")
+                return False
+    
+    # Validate data directory exists and contains required files
+    data_dir = config.get('data_dir', 'datasets/combined')
+    if not os.path.exists(data_dir):
+        logging.error(f"Data directory not found: {data_dir}")
+        return False
+    
+    # Check for required files in data directory
+    required_files = ['train.jsonl', 'valid.jsonl']
+    for filename in required_files:
+        filepath = os.path.join(data_dir, filename)
+        if not os.path.exists(filepath):
+            logging.error(f"Required data file not found: {filepath}")
             return False
     
     logging.info("Configuration validation passed")
@@ -62,31 +78,71 @@ def setup_output_directory(adapter_path: str) -> None:
     logging.info(f"Output directory prepared: {adapter_path}")
 
 
-def build_mlx_command(config: Dict[str, Any]) -> list:
-    """Build the MLX LoRA training command."""
+def create_mlx_config_file(config: Dict[str, Any], config_path: str) -> None:
+    """Create MLX LoRA configuration file with proper LoRA parameters."""
+    import yaml
+    
+    mlx_config = {
+        "model": config['model'],
+        "train": True,
+        "data": config.get('data_dir', 'datasets/combined'),
+        "adapter_path": config['adapter_path'],
+        "num_layers": config.get('num_layers', 16),
+        "learning_rate": config['learning_rate'],
+        "batch_size": config['batch_size'],
+        "iters": config['iters'],
+        "val_batches": config['val_batches'],
+        "steps_per_report": config['steps_per_report'],
+        "steps_per_eval": config['steps_per_eval'],
+        "save_every": config.get('steps_per_save', 100),
+        "max_seq_length": config.get('max_seq_length', 512),
+        "seed": config.get('seed', 42),
+        "fine_tune_type": config.get('fine_tune_type', 'lora'),
+        "lora_parameters": config.get('lora_parameters', {
+            "rank": 16,
+            "dropout": 0.1,
+            "scale": 32
+        })
+    }
+    
+    # Add optional advanced parameters
+    if config.get('grad_checkpoint', False):
+        mlx_config["grad_checkpoint"] = True
+    
+    if config.get('optimizer'):
+        mlx_config["optimizer"] = config['optimizer']
+    
+    if config.get('weight_decay'):
+        mlx_config["optimizer_config"] = {
+            config.get('optimizer', 'adam'): {
+                "weight_decay": config['weight_decay']
+            }
+        }
+    
+    if config.get('lr_schedule'):
+        mlx_config["lr_schedule"] = config['lr_schedule']
+    
+
+    
+    # Write config file
+    with open(config_path, 'w', encoding='utf-8') as f:
+        yaml.dump(mlx_config, f, default_flow_style=False)
+    
+    logging.info(f"Created MLX config file: {config_path}")
+
+
+def build_mlx_command(config: Dict[str, Any]) -> Tuple[list, str]:
+    """Build the MLX LoRA training command with config file."""
+    # Create temporary config file
+    config_path = f"{config['adapter_path']}_mlx_config.yaml"
+    create_mlx_config_file(config, config_path)
+    
     cmd = [
         "python", "-m", "mlx_lm", "lora",
-        "--model", config['model'],
-        "--train",
-        "--data", "datasets",  # Directory containing train.jsonl, valid.jsonl
-        "--adapter-path", config['adapter_path'],
-        "--num-layers", str(config['lora_layers']),
-        "--learning-rate", str(config['learning_rate']),
-        "--batch-size", str(config['batch_size']),
-        "--iters", str(config['iters']),
-        "--val-batches", str(config['val_batches']),
-        "--steps-per-report", str(config['steps_per_report']),
-        "--steps-per-eval", str(config['steps_per_eval']),
-        "--save-every", str(config['steps_per_save']),
-        "--max-seq-length", str(config.get('max_seq_length', 512)),
-        "--seed", str(config.get('seed', 42))
+        "--config", config_path
     ]
     
-    # Add optional parameters
-    if config.get('grad_checkpoint', False):
-        cmd.append("--grad-checkpoint")
-    
-    return cmd
+    return cmd, config_path
 
 
 def monitor_training_progress(log_file: str) -> None:
@@ -107,10 +163,11 @@ def monitor_training_progress(log_file: str) -> None:
 
 def run_training(config: Dict[str, Any], dry_run: bool = False) -> bool:
     """Execute the MLX LoRA training process."""
-    cmd = build_mlx_command(config)
+    cmd, config_path = build_mlx_command(config)
     
     logging.info("Starting MLX LoRA training...")
     logging.info(f"Command: {' '.join(cmd)}")
+    logging.info(f"Using config file: {config_path}")
     
     if dry_run:
         logging.info("Dry run mode - command would be executed but not actually run")

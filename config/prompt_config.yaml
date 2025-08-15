@@ -1,5 +1,5 @@
-# Prompt Configuration for Japanese Grammar Correction
-# This file controls the default prompt language settings
+# Prompt Configuration for Japanese Grammar Correction Multi-Task Training
+# This file controls prompt templates for GEC and AutoJQE datasets
 
 # Default prompt language settings
 default_prompt_language: "english"  # Options: "japanese", "english"
@@ -7,12 +7,13 @@ default_prompt_language: "english"  # Options: "japanese", "english"
 # Model-specific prompt settings
 model_prompt_settings:
   "0.6B": "english"    # Smaller models work better with English prompts
-  "1.5B": "japanese"   # Larger models can handle Japanese prompts better
-  "1.7B": "japanese"   # Larger models can handle Japanese prompts better
+  "1.5B": "english"    # Based on testing results, English works better
+  "1.7B": "english"    # Based on testing results, English works better
 
 # Training settings
 training:
   use_english_prompts: true  # Use English prompts for training by default
+  multi_task_training: true  # Enable multi-task training
   
 # Evaluation settings  
 evaluation:
@@ -22,7 +23,63 @@ evaluation:
 inference:
   use_english_prompts: true  # Use English prompts for inference by default
 
-# Prompt templates (can be overridden)
+# Training Objectives and Corresponding Prompts
+training_objectives:
+  # === GEC Dataset Tasks ===
+  gec_error_detection:
+    description: "Detect and mark grammatical errors in Japanese sentences"
+    system_prompt: "You are a Japanese grammar error detection expert. Your task is to identify grammatical errors and mark them with <> brackets. Rules: 1) Mark only the specific incorrect words/phrases, not entire clauses. 2) Do not mark correct parts. 3) Focus on particle errors, verb forms, adjective inflections, and word choice. 4) Be precise - mark the minimal span that contains the error."
+    user_template: "Identify and mark grammatical errors in this Japanese sentence using <> brackets around the incorrect parts only: {input_text}"
+    expected_output: "Sentence with errors marked using <> brackets"
+    
+  gec_error_correction:
+    description: "Correct grammatical errors marked in Japanese sentences"
+    system_prompt: "You are a Japanese grammar correction specialist. Replace the parts marked with <> brackets with the correct grammatical forms. Remove the brackets and provide the corrected sentence."
+    user_template: "Correct the errors marked with <> brackets in this Japanese sentence: {input_text}"
+    expected_output: "Grammatically correct Japanese sentence"
+    
+  gec_end_to_end:
+    description: "Direct grammar correction without error marking"
+    system_prompt: "You are a Japanese grammar correction specialist. Correct grammatical errors in Japanese sentences directly."
+    user_template: "Correct the grammar in this Japanese sentence: {input_text}"
+    expected_output: "Grammatically correct Japanese sentence"
+    
+
+
+  # === AutoJQE Dataset Tasks ===
+  quality_assessment:
+    description: "Assess the quality of grammar corrections"
+    system_prompt: "You are a Japanese grammar correction quality assessor. Evaluate the quality of grammar corrections and provide a score from 1-4 (1=poor, 2=fair, 3=good, 4=excellent)."
+    user_template: "Assess the quality of this correction:\nOriginal: {source_text}\nCorrected: {corrected_text}"
+    expected_output: "Quality score (1-4) with brief explanation"
+    
+
+
+
+# Multi-task Training Configuration
+multi_task_config:
+  # Task groupings for joint training
+  task_groups:
+    gec_core:
+      - gec_error_detection
+      - gec_error_correction
+      - gec_end_to_end
+    
+    quality_assessment:
+      - quality_assessment
+    
+
+  
+  # Task prefixes for multi-task identification
+  task_prefixes:
+    gec_error_detection: "[DETECT]"
+    gec_error_correction: "[CORRECT]"
+    gec_end_to_end: "[FIX]"
+    quality_assessment: "[ASSESS]"
+
+
+
+# Legacy prompt templates (for backward compatibility)
 custom_prompts:
   system_japanese: "あなたは日本語の文法修正を専門とするAIアシスタントです。与えられた文章の文法エラーを正確に修正してください。"
   system_english: "You are a Japanese grammar correction assistant. Correct grammatical errors in Japanese sentences."
