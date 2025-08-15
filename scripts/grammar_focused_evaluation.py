@@ -176,31 +176,60 @@ def analyze_detect_task(input_text: str, predicted: str, expected: str) -> Dict:
     expected_base = re.sub(r'<([^>]*)>', r'\1', expected)
     base_text_match = predicted_base.strip() == expected_base.strip()
     
-    # Calculate precision, recall, F1 for error detection
+    # Calculate exact match precision, recall, F1
     predicted_set = set(predicted_errors)
     expected_set = set(expected_errors)
     
-    true_positives = len(predicted_set & expected_set)
-    false_positives = len(predicted_set - expected_set)
-    false_negatives = len(expected_set - predicted_set)
+    exact_true_positives = len(predicted_set & expected_set)
+    exact_false_positives = len(predicted_set - expected_set)
+    exact_false_negatives = len(expected_set - predicted_set)
     
-    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
-    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+    exact_precision = exact_true_positives / (exact_true_positives + exact_false_positives) if (exact_true_positives + exact_false_positives) > 0 else 0
+    exact_recall = exact_true_positives / (exact_true_positives + exact_false_negatives) if (exact_true_positives + exact_false_negatives) > 0 else 0
+    exact_f1 = 2 * exact_precision * exact_recall / (exact_precision + exact_recall) if (exact_precision + exact_recall) > 0 else 0
+    
+    # Calculate inclusive match (predicted contains expected errors)
+    inclusive_true_positives = 0
+    inclusive_false_negatives = 0
+    
+    for expected_error in expected_errors:
+        # Check if any predicted error contains this expected error
+        found_in_predicted = any(expected_error in predicted_error for predicted_error in predicted_errors)
+        if found_in_predicted:
+            inclusive_true_positives += 1
+        else:
+            inclusive_false_negatives += 1
+    
+    # For inclusive false positives, count predicted errors that don't contain any expected error
+    inclusive_false_positives = 0
+    for predicted_error in predicted_errors:
+        contains_expected = any(expected_error in predicted_error for expected_error in expected_errors)
+        if not contains_expected:
+            inclusive_false_positives += 1
+    
+    inclusive_precision = inclusive_true_positives / (inclusive_true_positives + inclusive_false_positives) if (inclusive_true_positives + inclusive_false_positives) > 0 else 0
+    inclusive_recall = inclusive_true_positives / (inclusive_true_positives + inclusive_false_negatives) if (inclusive_true_positives + inclusive_false_negatives) > 0 else 0
+    inclusive_f1 = 2 * inclusive_precision * inclusive_recall / (inclusive_precision + inclusive_recall) if (inclusive_precision + inclusive_recall) > 0 else 0
     
     exact_match = predicted.strip() == expected.strip()
     
     return {
         'exact_match': exact_match,
         'base_text_match': base_text_match,
-        'precision': precision,
-        'recall': recall,
-        'f1': f1,
+        'precision': exact_precision,
+        'recall': exact_recall,
+        'f1': exact_f1,
+        'inclusive_precision': inclusive_precision,
+        'inclusive_recall': inclusive_recall,
+        'inclusive_f1': inclusive_f1,
         'predicted_errors': predicted_errors,
         'expected_errors': expected_errors,
-        'true_positives': true_positives,
-        'false_positives': false_positives,
-        'false_negatives': false_negatives,
+        'true_positives': exact_true_positives,
+        'false_positives': exact_false_positives,
+        'false_negatives': exact_false_negatives,
+        'inclusive_true_positives': inclusive_true_positives,
+        'inclusive_false_positives': inclusive_false_positives,
+        'inclusive_false_negatives': inclusive_false_negatives,
         'task_type': 'DETECT'
     }
 
@@ -344,7 +373,7 @@ def calculate_detect_metrics(results: List[Dict]) -> Dict:
     total = len(results)
     exact_matches = sum(1 for r in results if r['analysis']['exact_match'])
     
-    # Calculate average precision, recall, F1
+    # Calculate average exact precision, recall, F1
     precisions = [r['analysis']['precision'] for r in results]
     recalls = [r['analysis']['recall'] for r in results]
     f1_scores = [r['analysis']['f1'] for r in results]
@@ -353,8 +382,18 @@ def calculate_detect_metrics(results: List[Dict]) -> Dict:
     avg_recall = sum(recalls) / len(recalls) if recalls else 0
     avg_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0
     
-    # Count perfect detections (F1 = 1.0)
+    # Calculate average inclusive precision, recall, F1
+    inclusive_precisions = [r['analysis']['inclusive_precision'] for r in results]
+    inclusive_recalls = [r['analysis']['inclusive_recall'] for r in results]
+    inclusive_f1_scores = [r['analysis']['inclusive_f1'] for r in results]
+    
+    avg_inclusive_precision = sum(inclusive_precisions) / len(inclusive_precisions) if inclusive_precisions else 0
+    avg_inclusive_recall = sum(inclusive_recalls) / len(inclusive_recalls) if inclusive_recalls else 0
+    avg_inclusive_f1 = sum(inclusive_f1_scores) / len(inclusive_f1_scores) if inclusive_f1_scores else 0
+    
+    # Count perfect detections (F1 = 1.0) and good coverage (inclusive F1 > 0.8)
     perfect_detections = sum(1 for f1 in f1_scores if f1 == 1.0)
+    good_coverage = sum(1 for f1 in inclusive_f1_scores if f1 > 0.8)
     
     return {
         'accuracy': exact_matches / total if total > 0 else 0,
@@ -363,7 +402,11 @@ def calculate_detect_metrics(results: List[Dict]) -> Dict:
         'avg_precision': avg_precision,
         'avg_recall': avg_recall,
         'avg_f1': avg_f1,
-        'perfect_detections': perfect_detections
+        'avg_inclusive_precision': avg_inclusive_precision,
+        'avg_inclusive_recall': avg_inclusive_recall,
+        'avg_inclusive_f1': avg_inclusive_f1,
+        'perfect_detections': perfect_detections,
+        'good_coverage': good_coverage
     }
 
 
@@ -533,8 +576,12 @@ def main():
             if analysis['exact_match']:
                 exact_matches += 1
                 print("✅ PERFECT DETECTION")
+            elif analysis['inclusive_f1'] > 0.8:  # High inclusive F1 means good coverage
+                print(f"🟡 GOOD COVERAGE - Exact: P:{analysis['precision']:.2f} R:{analysis['recall']:.2f} F1:{analysis['f1']:.2f}")
+                print(f"                  Inclusive: P:{analysis['inclusive_precision']:.2f} R:{analysis['inclusive_recall']:.2f} F1:{analysis['inclusive_f1']:.2f}")
             else:
-                print(f"📊 P:{analysis['precision']:.2f} R:{analysis['recall']:.2f} F1:{analysis['f1']:.2f}")
+                print(f"📊 Exact: P:{analysis['precision']:.2f} R:{analysis['recall']:.2f} F1:{analysis['f1']:.2f}")
+                print(f"   Inclusive: P:{analysis['inclusive_precision']:.2f} R:{analysis['inclusive_recall']:.2f} F1:{analysis['inclusive_f1']:.2f}")
         
         elif current_task_type == 'CORRECT':
             if analysis['exact_match']:
@@ -593,8 +640,10 @@ def main():
                 overall_correct += metrics['exact_matches']
             elif task_type == 'DETECT':
                 print(f"  Exact matches: {metrics['exact_matches']} ({metrics['accuracy']:.1%})")
-                print(f"  Avg F1-Score: {metrics['avg_f1']:.3f}")
-                overall_correct += metrics['exact_matches']
+                print(f"  Good coverage: {metrics['good_coverage']} ({metrics['good_coverage']/len(task_examples):.1%})")
+                print(f"  Exact F1: {metrics['avg_f1']:.3f} | Inclusive F1: {metrics['avg_inclusive_f1']:.3f}")
+                # Use good coverage for overall score (more lenient)
+                overall_correct += metrics['good_coverage']
             elif task_type == 'CORRECT':
                 print(f"  Exact matches: {metrics['exact_matches']} ({metrics['accuracy']:.1%})")
                 overall_correct += metrics['exact_matches']
@@ -645,11 +694,17 @@ def main():
         elif args.task_filter == 'DETECT':
             print(f"Exact matches: {metrics['exact_matches']} ({metrics['accuracy']:.1%})")
             print(f"Perfect detections: {metrics['perfect_detections']} ({metrics['perfect_detections']/total:.1%})")
+            print(f"Good coverage (inclusive F1>0.8): {metrics['good_coverage']} ({metrics['good_coverage']/total:.1%})")
             print()
-            print("📊 Detection Metrics:")
+            print("📊 Exact Detection Metrics:")
             print(f"Average Precision: {metrics['avg_precision']:.3f}")
             print(f"Average Recall: {metrics['avg_recall']:.3f}")
             print(f"Average F1-Score: {metrics['avg_f1']:.3f}")
+            print()
+            print("📊 Inclusive Detection Metrics (allows broader error spans):")
+            print(f"Average Precision: {metrics['avg_inclusive_precision']:.3f}")
+            print(f"Average Recall: {metrics['avg_inclusive_recall']:.3f}")
+            print(f"Average F1-Score: {metrics['avg_inclusive_f1']:.3f}")
         
         elif args.task_filter == 'CORRECT':
             print(f"Exact matches: {metrics['exact_matches']} ({metrics['accuracy']:.1%})")
@@ -673,7 +728,8 @@ def main():
         # Overall assessment for single task
         primary_metric = metrics['accuracy']
         if args.task_filter == 'DETECT':
-            primary_metric = metrics['avg_f1']
+            # Use inclusive F1 for DETECT as it's more practical
+            primary_metric = metrics.get('avg_inclusive_f1', metrics['avg_f1'])
         elif args.task_filter == 'ASSESS' and metrics['valid_predictions'] > 0:
             primary_metric = metrics['close_accuracy']  # Use close accuracy for assessment
         

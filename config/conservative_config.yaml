@@ -37,7 +37,7 @@ truncation: true
 padding: true
 
 # Detection-optimized settings
-fine_tune_type: "dora"  # LoRA for parameter efficiency
+fine_tune_type: "lora"  # LoRA for parameter efficiency
 mask_prompt: true  # Focus learning on detection outputs only
 grad_checkpoint: false  # Disable for faster training with smaller config
 
