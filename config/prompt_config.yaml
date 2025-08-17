@@ -2,7 +2,7 @@
 # This file controls prompt templates for GEC and AutoJQE datasets
 
 # Default prompt language settings
-default_prompt_language: "english"  # Options: "japanese", "english"
+default_prompt_language: "japanese"  # Options: "japanese", "english"
 
 # Model-specific prompt settings
 model_prompt_settings:
@@ -10,48 +10,62 @@ model_prompt_settings:
   "1.5B": "english"    # Based on testing results, English works better
   "1.7B": "english"    # Based on testing results, English works better
 
-# Training settings
-training:
-  use_english_prompts: true  # Use English prompts for training by default
-  multi_task_training: true  # Enable multi-task training
-  
-# Evaluation settings  
-evaluation:
-  use_english_prompts: true  # Use English prompts for evaluation by default
-  
-# Inference settings
-inference:
-  use_english_prompts: true  # Use English prompts for inference by default
 
 # Training Objectives and Corresponding Prompts
 training_objectives:
-  # === GEC Dataset Tasks ===
-  gec_error_detection:
-    description: "Detect and mark grammatical errors in Japanese sentences with high precision"
-    system_prompt: ""
-    user_template: "Mark grammatical errors with <> brackets around incorrect parts: {input_text}"
-    expected_output: "Original sentence with errors precisely marked using <> brackets"
-    
-  gec_error_correction:
-    description: "Correct grammatical errors marked in Japanese sentences"
-    system_prompt: ""
-    user_template: "Fix the errors marked with <> brackets and provide corrected sentence: {input_text}"
-    expected_output: "Clean, grammatically correct Japanese sentence"
-    
-  gec_end_to_end:
-    description: "Direct grammar correction without error marking"
-    system_prompt: ""
-    user_template: "Correct grammatical errors in this Japanese sentence: {input_text}"
-    expected_output: "Grammatically correct and natural Japanese sentence"
-    
+  english:
+    # === GEC Dataset Tasks ===
+    gec_error_detection:
+      description: "Detect and mark grammatical errors in Japanese sentences with high precision"
+      system_prompt: ""
+      user_template: "Mark grammatical errors with <> brackets around incorrect parts: {input_text}"
+      expected_output: "Original sentence with errors precisely marked using <> brackets"
+      
+    gec_error_correction:
+      description: "Correct grammatical errors marked in Japanese sentences"
+      system_prompt: ""
+      user_template: "Fix the errors marked with <> brackets and provide corrected sentence: {input_text}"
+      expected_output: "Clean, grammatically correct Japanese sentence"
+      
+    gec_end_to_end:
+      description: "Direct grammar correction without error marking"
+      system_prompt: ""
+      user_template: "Correct grammatical errors in this Japanese sentence: {input_text}"
+      expected_output: "Grammatically correct and natural Japanese sentence"
+      
+    # === AutoJQE Dataset Tasks ===
+    quality_assessment:
+      description: "Assess the quality of grammar corrections"
+      system_prompt: ""
+      user_template: "Rate this correction quality (1-4):\nOriginal: {source_text}\nCorrected: {corrected_text}"
+      expected_output: "Quality score (1-4) with brief explanation"
 
-
-  # === AutoJQE Dataset Tasks ===
-  quality_assessment:
-    description: "Assess the quality of grammar corrections"
-    system_prompt: ""
-    user_template: "Rate this correction quality (1-4):\nOriginal: {source_text}\nCorrected: {corrected_text}"
-    expected_output: "Quality score (1-4) with brief explanation"
+  japanese:
+    # === GEC Dataset Tasks ===
+    gec_error_detection:
+      description: "日本語文の文法エラーを高精度で検出・マーク"
+      system_prompt: ""
+      user_template: "エラーをマーク: {input_text}"
+      expected_output: "文法エラーが<>括弧で正確にマークされた元の文"
+      
+    gec_error_correction:
+      description: "マークされた文法エラーを修正"
+      system_prompt: ""
+      user_template: "<>括弧でマークされたエラーを修正して正しい文を提供してください：{input_text}"
+      expected_output: "文法的に正しく自然な日本語文"
+      
+    gec_end_to_end:
+      description: "エラーマークなしの直接文法修正"
+      system_prompt: ""
+      user_template: "この日本語文の文法エラーを修正してください：{input_text}"
+      expected_output: "文法的に正しく自然な日本語文"
+      
+    # === AutoJQE Dataset Tasks ===
+    quality_assessment:
+      description: "文法修正の品質評価"
+      system_prompt: ""
+      user_template: "この修正の品質を評価してください（1-4）：\n元の文：{source_text}\n修正文：{corrected_text}"
+      expected_output: "品質スコア（1-4）と簡潔な説明"
     
 
 
@@ -67,15 +81,6 @@ multi_task_config:
     
     quality_assessment:
       - quality_assessment
-    
-
-  
-  # Task prefixes for multi-task identification
-  task_prefixes:
-    gec_error_detection: "[DETECT]"
-    gec_error_correction: "[CORRECT]"
-    gec_end_to_end: "[FIX]"
-    quality_assessment: "[ASSESS]"
 
 
 

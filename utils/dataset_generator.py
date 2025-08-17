@@ -31,7 +31,20 @@ class DatasetGenerator:
         """Initialize with prompt configuration."""
         # Use the unified prompts API instead of loading YAML directly
         from config.prompts import PromptConfig
-        self.prompt_config = PromptConfig(use_english=True)
+        import yaml
+        
+        # Load configuration to determine language setting
+        config_file = config_path or "config/prompt_config.yaml"
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+                default_language = config.get('default_prompt_language', 'english')
+                use_english = default_language == 'english'
+        except Exception as e:
+            print(f"Warning: Could not load prompt config, using English: {e}")
+            use_english = True
+        
+        self.prompt_config = PromptConfig(use_english=use_english)
         
         # Task mapping for dataset generation
         self.task_mapping = {
@@ -409,11 +422,11 @@ class DatasetGenerator:
         print("Generating GEC error detection data...")
         gec_detection_data = self.generate_gec_error_detection_data(gec_pairs)
         
-        print("Generating AutoJQE error detection data...")
-        autojqe_detection_data = self.generate_autojqe_error_detection_data(all_qe_pairs)
+        #print("Generating AutoJQE error detection data...")
+        #autojqe_detection_data = self.generate_autojqe_error_detection_data(all_qe_pairs)
         
         # Combine GEC and AutoJQE detection data
-        datasets["gec_error_detection"] = gec_detection_data + autojqe_detection_data
+        datasets["gec_error_detection"] = gec_detection_data #+ autojqe_detection_data
         
         print("Generating GEC error correction data...")
         datasets["gec_error_correction"] = self.generate_gec_error_correction_data(gec_pairs)

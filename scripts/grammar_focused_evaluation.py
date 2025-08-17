@@ -61,21 +61,28 @@ def load_test_data(file_path: str, max_examples: int = 3000, task_filter: str = 
                     assistant_msg = msg['content']
             
             if user_msg and assistant_msg:
-                # Determine task type from user message content
-                detected_task_type = 'OTHER'
-                if 'Mark grammatical errors' in user_msg or ('mark' in user_msg.lower() and '<>' in user_msg):
-                    detected_task_type = 'DETECT'
-                elif 'Fix the errors marked with' in user_msg or ('fix' in user_msg.lower() and '<>' in user_msg):
-                    detected_task_type = 'CORRECT'
-                elif 'Rate this correction quality' in user_msg or 'quality' in user_msg.lower():
-                    detected_task_type = 'ASSESS'
-                elif 'Correct grammatical errors' in user_msg or 'correct' in user_msg.lower():
-                    detected_task_type = 'FIX'
-                
-                # Filter by task type if specified
+                # Use command line task filter directly if specified
                 if task_filter and task_filter != 'ALL':
-                    if detected_task_type != task_filter:
-                        continue
+                    detected_task_type = task_filter
+                else:
+                    # Determine task type from user message content (support both English and Japanese)
+                    detected_task_type = 'OTHER'
+                    if ('Mark grammatical errors' in user_msg or 
+                        ('mark' in user_msg.lower() and '<>' in user_msg) or
+                        '文法エラーを<>括弧で囲んでマーク' in user_msg):
+                        detected_task_type = 'DETECT'
+                    elif ('Fix the errors marked with' in user_msg or 
+                          ('fix' in user_msg.lower() and '<>' in user_msg) or
+                          '<>括弧でマークされたエラーを修正' in user_msg):
+                        detected_task_type = 'CORRECT'
+                    elif ('Rate this correction quality' in user_msg or 
+                          'quality' in user_msg.lower() or
+                          '修正の品質を評価' in user_msg):
+                        detected_task_type = 'ASSESS'
+                    elif ('Correct grammatical errors' in user_msg or 
+                          'correct' in user_msg.lower() or
+                          '文法エラーを修正' in user_msg):
+                        detected_task_type = 'FIX'
                 
                 # Extract Japanese sentence from user message
                 # Handle task prefixes and different prompt formats
@@ -763,8 +770,8 @@ def main():
         
         elif args.task_filter == 'DETECT':
             print(f"Exact matches: {metrics['exact_matches']} ({metrics['accuracy']:.1%})")
-            print(f"Perfect detections: {metrics['perfect_detections']} ({metrics['perfect_detections']/total:.1%})")
-            print(f"Good coverage (inclusive F1>0.8): {metrics['good_coverage']} ({metrics['good_coverage']/total:.1%})")
+            print(f"Perfect detections: {metrics['perfect_detections']} ({metrics['perfect_detections']/total:.1%})" if total > 0 else "Perfect detections: 0 (0.0%)")
+            print(f"Good coverage (inclusive F1>0.8): {metrics['good_coverage']} ({metrics['good_coverage']/total:.1%})" if total > 0 else "Good coverage (inclusive F1>0.8): 0 (0.0%)")
             print()
             print("📊 Exact Detection Metrics:")
             print(f"Average Precision: {metrics['avg_precision']:.3f}")

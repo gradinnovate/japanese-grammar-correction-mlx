@@ -4,41 +4,41 @@
 model: "mlx-community/Qwen3-0.6B-4bit"
 #model: "mlx-community/gemma-3-270m-it-8bit"
 data_dir: "datasets/gec_error_detection"  # Directory containing train.jsonl, valid.jsonl, test.jsonl
-adapter_path: "models/japanese-gec-detect"
+adapter_path: "models/japanese-gec-detect-dora"
 
 # Enhanced LoRA/DoRA parameters for better error pattern learning
 num_layers: 16  # Increased layers for complex pattern recognition
 lora_parameters:
-  rank: 8  # Increased rank for better representation capacity
-  scale: 16  # Matched scale for stable gradient flow
-  dropout: 0.03  # Reduced dropout for better pattern retention
+  rank: 16  # Increased rank for better representation capacity
+  scale: 32  # Matched scale for stable gradient flow
+  dropout: 0.08  # Reduced dropout for better pattern retention
 
 # Optimized training parameters for improved detection
-batch_size: 4  # Increased batch size for better gradient estimates
-learning_rate: 1e-5  # Slightly higher for faster convergence on detection patterns
-num_epochs: 7  # Extended training for comprehensive pattern learning
+batch_size: 2  # Increased batch size for better gradient estimates
+learning_rate: 1e-6  # Slightly higher for faster convergence on detection patterns
+num_epochs: 1.2  # Extended training for comprehensive pattern learning
 val_batches: 75  # More validation samples for better monitoring
-steps_per_report: 25
-steps_per_eval: 200  # Less frequent but more thorough evaluation
+steps_per_report: 10
+steps_per_eval: 100  # Less frequent but more thorough evaluation
 steps_per_save: 100
 
 # Generation parameters optimized for detection precision
 max_tokens: 400  # Increased for complex sentence detection
 temperature: 0.01  # Ultra-low temperature for consistent detection patterns
-repetition_penalty: 1.02  # Slight penalty to avoid repetitive error marking
+#repetition_penalty: 1.02  # Slight penalty to avoid repetitive error marking
 
 # Enhanced evaluation settings
-eval_steps: 200
-save_steps: 400
-logging_steps: 20
+#eval_steps: 200
+#save_steps: 400
+#logging_steps: 20
 
 # Optimized data processing for detection task
 max_seq_length: 512  # Increased context for better pattern recognition
-truncation: true
-padding: true
+#truncation: true
+#padding: true
 
 # Detection-optimized settings
-fine_tune_type: "lora"  
+fine_tune_type: "dora"  
 mask_prompt: false  # CRITICAL: Model must see the input sentence to learn error detection  
 grad_checkpoint: true  # Enable for better memory efficiency with enhanced config
 
@@ -46,7 +46,7 @@ grad_checkpoint: true  # Enable for better memory efficiency with enhanced confi
 optimizer: "adamw"  # Better regularization than adam
 optimizer_config:
   adamw:
-    weight_decay: 0.005  # Light regularization for detection patterns
+    weight_decay: 0.05  # Light regularization for detection patterns
     beta1: 0.9
     beta2: 0.999
     eps: 1e-8

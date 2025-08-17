@@ -166,7 +166,7 @@ def calculate_iters_from_epochs(config: Dict[str, Any]) -> int:
             train_samples = sum(1 for _ in f)
         batch_size = config.get('batch_size', 4)
         num_epochs = config.get('num_epochs', 3)
-        iters = (num_epochs * train_samples + batch_size - 1) // batch_size  # Round up
+        iters = int((num_epochs * train_samples + batch_size - 1) // batch_size)  # Convert to int
         logging.info(f"Calculated iters: {iters} (epochs: {num_epochs}, samples: {train_samples}, batch_size: {batch_size})")
         
         # Log to MLflow

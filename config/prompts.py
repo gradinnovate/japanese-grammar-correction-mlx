@@ -31,6 +31,10 @@ def _get_system_prompt(task_type: str, use_english: bool = True):
     config = _load_yaml_config()
     objectives = config.get('training_objectives', {})
     
+    # Select language section
+    language = 'english' if use_english else 'japanese'
+    lang_objectives = objectives.get(language, {})
+    
     # Map task types to YAML keys
     task_mapping = {
         'FIX': 'gec_end_to_end',
@@ -40,26 +44,42 @@ def _get_system_prompt(task_type: str, use_english: bool = True):
     }
     
     yaml_key = task_mapping.get(task_type, 'gec_end_to_end')
-    if yaml_key in objectives:
-        prompt = objectives[yaml_key].get('system_prompt', '')
+    if yaml_key in lang_objectives:
+        prompt = lang_objectives[yaml_key].get('system_prompt', '')
+        # If system_prompt is explicitly empty in YAML, return empty
+        if prompt == '':
+            return ''
         # For detection tasks, add extra emphasis on precision
         if task_type == 'DETECT' and prompt:
             return prompt + " Remember: precision is critical - only mark actual errors."
         return prompt
     
     # Enhanced fallbacks based on task type
-    fallbacks = {
-        'DETECT': "You are an expert Japanese grammar error detection specialist. Mark only actual grammatical errors with <> brackets.",
-        'CORRECT': "You are a Japanese grammar correction specialist. Fix marked errors and provide clean, correct sentences.",
-        'FIX': "You are a Japanese grammar correction specialist. Correct grammatical errors while maintaining natural flow.",
-        'ASSESS': "You are a Japanese grammar correction quality assessor. Provide accurate quality scores."
-    }
-    return fallbacks.get(task_type, "You are a Japanese grammar correction specialist.")
+    if use_english:
+        fallbacks = {
+            'DETECT': "You are an expert Japanese grammar error detection specialist. Mark only actual grammatical errors with <> brackets.",
+            'CORRECT': "You are a Japanese grammar correction specialist. Fix marked errors and provide clean, correct sentences.",
+            'FIX': "You are a Japanese grammar correction specialist. Correct grammatical errors while maintaining natural flow.",
+            'ASSESS': "You are a Japanese grammar correction quality assessor. Provide accurate quality scores."
+        }
+        return fallbacks.get(task_type, "You are a Japanese grammar correction specialist.")
+    else:
+        fallbacks = {
+            'DETECT': "あなたは日本語の文法エラー検出の専門家です。実際の文法エラーのみを<>括弧でマークしてください。",
+            'CORRECT': "あなたは日本語の文法修正の専門家です。マークされたエラーを修正して、正しい文を提供してください。",
+            'FIX': "あなたは日本語の文法修正の専門家です。自然な流れを保ちながら文法エラーを修正してください。",
+            'ASSESS': "あなたは日本語の文法修正品質評価の専門家です。正確な品質スコアを提供してください。"
+        }
+        return fallbacks.get(task_type, "あなたは日本語の文法修正の専門家です。")
 
 def _get_user_template(task_type: str, use_english: bool = True):
     """Get optimized user template from YAML config."""
     config = _load_yaml_config()
     objectives = config.get('training_objectives', {})
+    
+    # Select language section
+    language = 'english' if use_english else 'japanese'
+    lang_objectives = objectives.get(language, {})
     
     # Map task types to YAML keys
     task_mapping = {
@@ -70,23 +90,28 @@ def _get_user_template(task_type: str, use_english: bool = True):
     }
     
     yaml_key = task_mapping.get(task_type, 'gec_end_to_end')
-    if yaml_key in objectives:
-        template = objectives[yaml_key].get('user_template', '')
-        # Add task prefix for multi-task training
-        prefixes = config.get('multi_task_config', {}).get('task_prefixes', {})
-        prefix = prefixes.get(yaml_key, f'[{task_type}]')
-        if not template.startswith(prefix) and not template.startswith('['):
-            template = f"{prefix} {template}"
+    if yaml_key in lang_objectives:
+        template = lang_objectives[yaml_key].get('user_template', '')
+        # Don't add task prefix - use template as-is
         return template
     
-    # Enhanced fallbacks with task-specific instructions
-    fallback_templates = {
-        'DETECT': "[DETECT] Analyze this Japanese sentence and mark ONLY the grammatical errors using <> brackets: {input_text}",
-        'CORRECT': "[CORRECT] Fix the grammatical errors marked with <> brackets in this sentence: {input_text}",
-        'FIX': "[FIX] Correct any grammatical errors in this Japanese sentence: {input_text}",
-        'ASSESS': "[ASSESS] Assess the quality of this grammar correction: {input_text}"
-    }
-    return fallback_templates.get(task_type, f"[{task_type}] Please process this Japanese sentence: {{input_text}}")
+    # Enhanced fallbacks with task-specific instructions (no prefixes)
+    if use_english:
+        fallback_templates = {
+            'DETECT': "Analyze this Japanese sentence and mark ONLY the grammatical errors using <> brackets: {input_text}",
+            'CORRECT': "Fix the grammatical errors marked with <> brackets in this sentence: {input_text}",
+            'FIX': "Correct any grammatical errors in this Japanese sentence: {input_text}",
+            'ASSESS': "Assess the quality of this grammar correction: {input_text}"
+        }
+        return fallback_templates.get(task_type, "Please process this Japanese sentence: {input_text}")
+    else:
+        fallback_templates = {
+            'DETECT': "この日本語文を分析して、文法エラーのみを<>括弧でマークしてください：{input_text}",
+            'CORRECT': "この文の<>括弧でマークされた文法エラーを修正してください：{input_text}",
+            'FIX': "この日本語文の文法エラーを修正してください：{input_text}",
+            'ASSESS': "この文法修正の品質を評価してください：{input_text}"
+        }
+        return fallback_templates.get(task_type, "この日本語文を処理してください：{input_text}")
 
 # Dynamic prompt access
 class _PromptDict:
