@@ -54,16 +54,16 @@ def load_test_data(file_path: str, max_examples: int = 3000, task_filter: str = 
                     assistant_msg = msg['content']
             
             if user_msg and assistant_msg:
-                # Determine task type from user message
+                # Determine task type from user message content
                 detected_task_type = 'OTHER'
-                if user_msg.startswith('[FIX]'):
-                    detected_task_type = 'FIX'
-                elif user_msg.startswith('[DETECT]'):
+                if 'Mark grammatical errors' in user_msg or ('mark' in user_msg.lower() and '<>' in user_msg):
                     detected_task_type = 'DETECT'
-                elif user_msg.startswith('[CORRECT]'):
+                elif 'Fix the errors marked with' in user_msg or ('fix' in user_msg.lower() and '<>' in user_msg):
                     detected_task_type = 'CORRECT'
-                elif user_msg.startswith('[ASSESS]'):
+                elif 'Rate this correction quality' in user_msg or 'quality' in user_msg.lower():
                     detected_task_type = 'ASSESS'
+                elif 'Correct grammatical errors' in user_msg or 'correct' in user_msg.lower():
+                    detected_task_type = 'FIX'
                 
                 # Filter by task type if specified
                 if task_filter and task_filter != 'ALL':
@@ -74,7 +74,7 @@ def load_test_data(file_path: str, max_examples: int = 3000, task_filter: str = 
                 # Handle task prefixes and different prompt formats
                 input_text = user_msg
                 
-                # Remove task prefix if present
+                # Remove task prefix if present (backward compatibility)
                 if input_text.startswith('[') and ']' in input_text:
                     input_text = input_text.split(']', 1)[1].strip()
                 
@@ -466,7 +466,7 @@ def main():
     parser = argparse.ArgumentParser(description="Grammar-focused evaluation for Japanese GEC")
     parser.add_argument("--model-path", default="models/japanese-gec-detect-v4", 
                        help="Path to the trained model adapters")
-    parser.add_argument("--base-model", default="mlx-community/Qwen3-0.6B-4bit",
+    parser.add_argument("--base-model", default="mlx-community/gemma-3-270m-it-8bit",
                        help="Base model to use")
     parser.add_argument("--test-data", default="datasets/combined/test.jsonl",
                        help="Path to test data")

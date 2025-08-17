@@ -10,6 +10,7 @@ import re
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from .gec_parser import parse_gec_corpus, GECPair
+from .autojqe_parser import parse_autojqe_csv, QEPair
 
 
 @dataclass
@@ -24,9 +25,18 @@ class TrainingExample:
 class GECTrainingDataGenerator:
     """Generate training data for different GEC training approaches."""
     
-    def __init__(self, corpus_path: str):
+    def __init__(self, corpus_path: str = None, autojqe_csv_path: str = None):
         self.corpus_path = corpus_path
-        self.gec_pairs = parse_gec_corpus(corpus_path)
+        self.autojqe_csv_path = autojqe_csv_path
+        
+        # Load data from specified source
+        self.gec_pairs = []
+        self.qe_pairs = []
+        
+        if corpus_path:
+            self.gec_pairs = parse_gec_corpus(corpus_path)
+        if autojqe_csv_path:
+            self.qe_pairs = parse_autojqe_csv(autojqe_csv_path)
     
     def generate_error_detection_data(self) -> List[TrainingExample]:
         """
@@ -51,6 +61,10 @@ class GECTrainingDataGenerator:
                 error_spans=self._extract_error_spans(pair.original_line.split('\t')[0]),
                 instruction=instruction
             ))
+        
+        # Add AutoJQE data if available
+        if self.qe_pairs:
+            examples.extend(self.generate_autojqe_detection_data())
         
         return examples
     
@@ -186,20 +200,99 @@ class GECTrainingDataGenerator:
                     ]
                 }
                 f.write(json.dumps(chat_data, ensure_ascii=False) + '\n')
+    
+    def generate_autojqe_detection_data(self) -> List[TrainingExample]:
+        """
+        Generate detection training data from AutoJQE CSV data.
+        Uses the original-corrected pairs to create error detection examples.
+        
+        Returns:
+            List of training examples for error detection
+        """
+        from .llm_client import create_llm_client, SyntheticDataGenerator
+        import os
+        
+        examples = []
+        
+        # Only process pairs where there are actual differences (errors exist)
+        error_pairs = [pair for pair in self.qe_pairs 
+                      if pair.source_text != pair.corrected_text and pair.average_score >= 2.0]
+        
+        # Use LLM to generate error markers for the differences
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            # Fallback: create simple detection examples without LLM
+            for pair in error_pairs:
+                instruction = "請標記出句子中的語法錯誤部分，使用 <> 包圍錯誤的地方。"
+                
+                examples.append(TrainingExample(
+                    input_text=pair.source_text,
+                    target_text=pair.source_text,  # Fallback: no markers
+                    error_spans=[],
+                    instruction=instruction
+                ))
+            return examples
+        
+        # Use LLM to identify and mark the errors
+        client = create_llm_client(api_key=api_key, temperature=0.3)
+        
+        for pair in error_pairs:
+            prompt = f"""原文（錯誤）: {pair.source_text}
+訂正（正確）: {pair.corrected_text}
+
+請比較這兩個句子，找出錯誤的部分，然後在原文中用<>標記錯誤的部分。
+
+要求：
+- 只標記錯誤的部分，不標記正確的部分
+- 如果是助詞錯誤，只標記錯誤的助詞
+- 如果是動詞活用錯誤，只標記錯誤的動詞形式
+- 如果是語序錯誤，標記位置錯誤的部分
+
+輸出格式：錯誤句子中用<>標記錯誤部分
+"""
+            
+            try:
+                response = client.generate_single(prompt)
+                # Clean up response to get just the marked text
+                marked_text = response.strip()
+                
+                instruction = "請標記出句子中的語法錯誤部分，使用 <> 包圍錯誤的地方。"
+                
+                examples.append(TrainingExample(
+                    input_text=pair.source_text,
+                    target_text=marked_text,
+                    error_spans=self._extract_error_spans(marked_text),
+                    instruction=instruction
+                ))
+                
+            except Exception as e:
+                # Fallback if LLM fails
+                instruction = "請標記出句子中的語法錯誤部分，使用 <> 包圍錯誤的地方。"
+                
+                examples.append(TrainingExample(
+                    input_text=pair.source_text,
+                    target_text=pair.source_text,  # No markers as fallback
+                    error_spans=[],
+                    instruction=instruction
+                ))
+        
+        return examples
 
 
-def create_training_datasets(corpus_path: str, output_dir: str = "training_data"):
+def create_training_datasets(corpus_path: str = None, autojqe_csv_path: str = None, 
+                           output_dir: str = "training_data"):
     """
-    Create various training datasets from the GEC corpus.
+    Create various training datasets from the GEC corpus or AutoJQE CSV.
     
     Args:
         corpus_path: Path to the GEC corpus file
+        autojqe_csv_path: Path to the AutoJQE CSV file
         output_dir: Directory to save training data files
     """
     import os
     os.makedirs(output_dir, exist_ok=True)
     
-    generator = GECTrainingDataGenerator(corpus_path)
+    generator = GECTrainingDataGenerator(corpus_path, autojqe_csv_path)
     
     # Generate different types of training data
     datasets = {

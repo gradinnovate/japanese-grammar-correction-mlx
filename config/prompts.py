@@ -27,7 +27,7 @@ def _load_yaml_config():
     return _yaml_config
 
 def _get_system_prompt(task_type: str, use_english: bool = True):
-    """Get system prompt from YAML config."""
+    """Get optimized system prompt from YAML config."""
     config = _load_yaml_config()
     objectives = config.get('training_objectives', {})
     
@@ -41,13 +41,23 @@ def _get_system_prompt(task_type: str, use_english: bool = True):
     
     yaml_key = task_mapping.get(task_type, 'gec_end_to_end')
     if yaml_key in objectives:
-        return objectives[yaml_key].get('system_prompt', '')
+        prompt = objectives[yaml_key].get('system_prompt', '')
+        # For detection tasks, add extra emphasis on precision
+        if task_type == 'DETECT' and prompt:
+            return prompt + " Remember: precision is critical - only mark actual errors."
+        return prompt
     
-    # Fallback
-    return "You are a Japanese grammar correction specialist."
+    # Enhanced fallbacks based on task type
+    fallbacks = {
+        'DETECT': "You are an expert Japanese grammar error detection specialist. Mark only actual grammatical errors with <> brackets.",
+        'CORRECT': "You are a Japanese grammar correction specialist. Fix marked errors and provide clean, correct sentences.",
+        'FIX': "You are a Japanese grammar correction specialist. Correct grammatical errors while maintaining natural flow.",
+        'ASSESS': "You are a Japanese grammar correction quality assessor. Provide accurate quality scores."
+    }
+    return fallbacks.get(task_type, "You are a Japanese grammar correction specialist.")
 
 def _get_user_template(task_type: str, use_english: bool = True):
-    """Get user template from YAML config."""
+    """Get optimized user template from YAML config."""
     config = _load_yaml_config()
     objectives = config.get('training_objectives', {})
     
@@ -62,15 +72,21 @@ def _get_user_template(task_type: str, use_english: bool = True):
     yaml_key = task_mapping.get(task_type, 'gec_end_to_end')
     if yaml_key in objectives:
         template = objectives[yaml_key].get('user_template', '')
-        # Add task prefix
+        # Add task prefix for multi-task training
         prefixes = config.get('multi_task_config', {}).get('task_prefixes', {})
         prefix = prefixes.get(yaml_key, f'[{task_type}]')
-        if not template.startswith(prefix):
+        if not template.startswith(prefix) and not template.startswith('['):
             template = f"{prefix} {template}"
         return template
     
-    # Fallback
-    return f"[{task_type}] Please process this Japanese sentence: {{input_text}}"
+    # Enhanced fallbacks with task-specific instructions
+    fallback_templates = {
+        'DETECT': "[DETECT] Analyze this Japanese sentence and mark ONLY the grammatical errors using <> brackets: {input_text}",
+        'CORRECT': "[CORRECT] Fix the grammatical errors marked with <> brackets in this sentence: {input_text}",
+        'FIX': "[FIX] Correct any grammatical errors in this Japanese sentence: {input_text}",
+        'ASSESS': "[ASSESS] Assess the quality of this grammar correction: {input_text}"
+    }
+    return fallback_templates.get(task_type, f"[{task_type}] Please process this Japanese sentence: {{input_text}}")
 
 # Dynamic prompt access
 class _PromptDict:
@@ -135,21 +151,28 @@ def create_messages_format(input_text: str, output_text: str, use_english: bool 
     user_template = _get_user_template(task_type, use_english)
     user_prompt = user_template.format(input_text=input_text)
     
+    messages = []
+    
+    # Only add system message if system_prompt is not empty
+    if system_prompt and system_prompt.strip():
+        messages.append({
+            "role": "system",
+            "content": system_prompt
+        })
+    
+    messages.extend([
+        {
+            "role": "user",
+            "content": user_prompt
+        },
+        {
+            "role": "assistant",
+            "content": output_text
+        }
+    ])
+    
     return {
-        "messages": [
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": user_prompt
-            },
-            {
-                "role": "assistant",
-                "content": output_text
-            }
-        ]
+        "messages": messages
     }
 
 # Chat format for inference
@@ -177,10 +200,15 @@ def create_chat_prompt(input_text: str, use_english: bool = False, task_type: st
     else:
         user_message = user_template.format(input_text=input_text)
     
-    return CHAT_TEMPLATE.format(
-        system_message=system_message,
-        user_message=user_message
-    )
+    # Only include system message if it's not empty
+    if system_message and system_message.strip():
+        return CHAT_TEMPLATE.format(
+            system_message=system_message,
+            user_message=user_message
+        )
+    else:
+        # Use template without system message
+        return f"<|im_start|>user\n{user_message}<|im_end|>\n<|im_start|>assistant\n"
 
 # Prompt configuration
 class PromptConfig:
@@ -204,6 +232,12 @@ class PromptConfig:
         return create_messages_format(input_text, output_text, self.use_english, task_type)
     
     def create_chat_prompt(self, input_text: str, task_type: str = "FIX", **kwargs):
+        """Create chat prompt with enhanced detection formatting."""
+        # For detection tasks, ensure clear, unambiguous formatting
+        if task_type == "DETECT":
+            # Clean up input text to avoid confusion
+            clean_input = input_text.strip()
+            return create_chat_prompt(clean_input, self.use_english, task_type, **kwargs)
         return create_chat_prompt(input_text, self.use_english, task_type, **kwargs)
     
     def get_system_prompt(self, task_type: str = "FIX"):

@@ -35,7 +35,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
 
 def validate_config(config: Dict[str, Any]) -> bool:
-    """Validate the training configuration."""
+    """Validate the training configuration with detection-specific checks."""
     required_keys = [
         'model', 'learning_rate', 'batch_size', 'adapter_path'
     ]
@@ -68,6 +68,32 @@ def validate_config(config: Dict[str, Any]) -> bool:
             logging.error(f"Required data file not found: {filepath}")
             return False
     
+    # Detection-specific validation warnings
+    if 'gec_error_detection' in data_dir:
+        logging.info("🎯 Detection training mode detected")
+        
+        # Check temperature (convert to float if needed)
+        temp = config.get('temperature', 0.1)
+        try:
+            temp_val = float(temp)
+            if temp_val > 0.1:
+                logging.warning("⚠️  High temperature may affect detection precision")
+        except (ValueError, TypeError):
+            logging.warning("⚠️  Invalid temperature value")
+        
+        # Check mask_prompt
+        if config.get('mask_prompt', True):
+            logging.warning("⚠️  mask_prompt=True may hurt detection performance")
+        
+        # Check learning_rate (convert to float if needed)
+        lr = config.get('learning_rate', 1e-5)
+        try:
+            lr_val = float(lr)
+            if lr_val < 1e-5:
+                logging.warning("⚠️  Very low learning rate may slow detection pattern learning")
+        except (ValueError, TypeError):
+            logging.warning("⚠️  Invalid learning rate value")
+    
     logging.info("Configuration validation passed")
     return True
 
@@ -76,6 +102,26 @@ def setup_output_directory(adapter_path: str) -> None:
     """Create output directory for model adapters."""
     os.makedirs(adapter_path, exist_ok=True)
     logging.info(f"Output directory prepared: {adapter_path}")
+
+
+def calculate_iters_from_epochs(config: Dict[str, Any]) -> int:
+    """Calculate training iterations from num_epochs and training data size."""
+    from pathlib import Path
+    
+    data_dir = config.get('data_dir', 'datasets/combined')
+    train_file = Path(data_dir) / 'train.jsonl'
+    
+    if train_file.exists():
+        with open(train_file, 'r', encoding='utf-8') as f:
+            train_samples = sum(1 for _ in f)
+        batch_size = config.get('batch_size', 4)
+        num_epochs = config.get('num_epochs', 3)
+        iters = (num_epochs * train_samples + batch_size - 1) // batch_size  # Round up
+        logging.info(f"Calculated iters: {iters} (epochs: {num_epochs}, samples: {train_samples}, batch_size: {batch_size})")
+        return iters
+    else:
+        logging.warning(f"Train file not found: {train_file}, using default iters=1000")
+        return 1000
 
 
 def create_mlx_config_file(config: Dict[str, Any], config_path: str) -> None:
@@ -90,7 +136,7 @@ def create_mlx_config_file(config: Dict[str, Any], config_path: str) -> None:
         "num_layers": config.get('num_layers', 16),
         "learning_rate": config['learning_rate'],
         "batch_size": config['batch_size'],
-        "iters": config['iters'],
+        "iters": calculate_iters_from_epochs(config),
         "val_batches": config['val_batches'],
         "steps_per_report": config['steps_per_report'],
         "steps_per_eval": config['steps_per_eval'],
@@ -189,27 +235,66 @@ def run_training(config: Dict[str, Any], dry_run: bool = False) -> bool:
             bufsize=1
         )
         
-        # Monitor training output
+        # Monitor training output with detection-specific focus
+        best_val_loss = float('inf')
+        detection_mode = 'gec_error_detection' in config.get('data_dir', '')
+        
         for line in iter(process.stdout.readline, ''):
             line = line.strip()
             if line:
                 logging.info(f"MLX: {line}")
                 
-                # Log important training metrics
+                # Enhanced logging for detection training
                 if "Iter" in line and "Loss" in line:
-                    logging.info(f"Training progress: {line}")
-                elif "Validation" in line:
-                    logging.info(f"Validation: {line}")
+                    if detection_mode:
+                        logging.info(f"🎯 Detection training progress: {line}")
+                    else:
+                        logging.info(f"Training progress: {line}")
+                
+                elif "Validation" in line or "Val" in line:
+                    if detection_mode:
+                        logging.info(f"🎯 Detection validation: {line}")
+                        
+                        # Track best validation loss for detection
+                        try:
+                            parts = line.split()
+                            for i, part in enumerate(parts):
+                                if "loss" in part.lower() and i + 1 < len(parts):
+                                    try:
+                                        val_loss = float(parts[i + 1])
+                                        if val_loss < best_val_loss:
+                                            best_val_loss = val_loss
+                                            logging.info(f"✨ New best detection validation loss: {val_loss:.4f}")
+                                        break
+                                    except ValueError:
+                                        continue
+                        except Exception:
+                            pass
+                    else:
+                        logging.info(f"Validation: {line}")
+                
                 elif "Saved" in line:
-                    logging.info(f"Checkpoint: {line}")
+                    if detection_mode:
+                        logging.info(f"💾 Detection checkpoint: {line}")
+                    else:
+                        logging.info(f"Checkpoint: {line}")
         
         process.wait()
         end_time = time.time()
         
         if process.returncode == 0:
             duration = end_time - start_time
-            logging.info(f"Training completed successfully in {duration:.2f} seconds")
-            logging.info(f"Model adapters saved to: {config['adapter_path']}")
+            
+            if detection_mode:
+                logging.info(f"🎉 Detection training completed successfully in {duration:.2f} seconds")
+                logging.info(f"🎯 Detection adapters saved to: {config['adapter_path']}")
+                logging.info(f"📊 Best validation loss: {best_val_loss:.4f}")
+                logging.info("💡 Next steps:")
+                logging.info("   1. Run detection evaluation: python scripts/grammar_focused_evaluation.py --task-filter DETECT")
+                logging.info("   2. Test on sample sentences for quality assessment")
+            else:
+                logging.info(f"Training completed successfully in {duration:.2f} seconds")
+                logging.info(f"Model adapters saved to: {config['adapter_path']}")
             return True
         else:
             logging.error(f"Training failed with return code: {process.returncode}")

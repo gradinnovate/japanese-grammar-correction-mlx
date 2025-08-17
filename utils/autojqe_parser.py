@@ -54,10 +54,10 @@ def parse_individual_scores(score_str: str) -> List[float]:
         clean_str = score_str.strip('"')
         scores = [float(s.strip()) for s in clean_str.split(',')]
         
-        # Validate score range (1-4)
+        # Validate score range (0-4, allowing 0 for poor quality)
         for score in scores:
-            if not (1.0 <= score <= 4.0):
-                raise ValueError(f"Score {score} out of valid range (1-4)")
+            if not (0.0 <= score <= 4.0):
+                raise ValueError(f"Score {score} out of valid range (0-4)")
         
         return scores
     except (ValueError, AttributeError) as e:

@@ -1,58 +1,61 @@
-# Precision-Focused Configuration for Japanese Grammar Error Detection
-# Strategy: Quality over quantity, precise detection patterns
+# Enhanced Precision Configuration for Japanese Grammar Error Detection
+# Strategy: Optimized for better detection accuracy and pattern learning
 
-model: "mlx-community/Qwen3-0.6B-4bit"
+model: "mlx-community/Qwen3-1.7B-4bit"
 data_dir: "datasets/gec_error_detection"  # Directory containing train.jsonl, valid.jsonl, test.jsonl
-adapter_path: "models/japanese-gec-detect-v4"
+adapter_path: "models/japanese-gec-detect-no-mask"
 
-# Balanced LoRA/DoRA parameters for stable learning
-num_layers: 16  # Number of layers to fine-tune
+# Enhanced LoRA/DoRA parameters for better error pattern learning
+num_layers: 16  # Increased layers for complex pattern recognition
 lora_parameters:
-  rank: 16  # LoRA rank for good representation without overfitting
-  scale: 16  # Reduced scale for more stable training
-  dropout: 0.05  # Lower dropout for better learning stability
+  rank: 8  # Increased rank for better representation capacity
+  scale: 16  # Matched scale for stable gradient flow
+  dropout: 0.03  # Reduced dropout for better pattern retention
 
-# Stable training parameters for consistent performance
-batch_size: 8  # Larger batch for more stable gradients
-learning_rate: 1e-5  # Lower learning rate for stable convergence
-iters: 4000  # Extended training with stable learning
-val_batches: 50  # Regular validation monitoring
-steps_per_report: 20
-steps_per_eval: 100  # Frequent evaluation for early stopping
-steps_per_save: 200
+# Optimized training parameters for improved detection
+batch_size: 4  # Increased batch size for better gradient estimates
+learning_rate: 1e-5  # Slightly higher for faster convergence on detection patterns
+num_epochs: 8  # Extended training for comprehensive pattern learning
+val_batches: 75  # More validation samples for better monitoring
+steps_per_report: 25
+steps_per_eval: 200  # Less frequent but more thorough evaluation
+steps_per_save: 100
 
 # Generation parameters optimized for detection precision
-max_tokens: 300  # Sufficient length for detection patterns
-temperature: 0.01  # Extremely low temperature for deterministic output
-repetition_penalty: 1.0  # No penalty to avoid interfering with detection patterns
+max_tokens: 400  # Increased for complex sentence detection
+temperature: 0.01  # Ultra-low temperature for consistent detection patterns
+repetition_penalty: 1.02  # Slight penalty to avoid repetitive error marking
 
-# Precision-focused evaluation settings
-eval_steps: 100
-save_steps: 200
+# Enhanced evaluation settings
+eval_steps: 200
+save_steps: 400
 logging_steps: 20
 
 # Optimized data processing for detection task
-max_seq_length: 512  # Balanced context length for most sentences
+max_seq_length: 512  # Increased context for better pattern recognition
 truncation: true
 padding: true
 
 # Detection-optimized settings
-fine_tune_type: "lora"  # LoRA for parameter efficiency
-mask_prompt: true  # Focus learning on detection outputs only
-grad_checkpoint: false  # Disable for faster training with smaller config
+fine_tune_type: "lora"  
+mask_prompt: false  # CRITICAL: Model must see the input sentence to learn error detection  
+grad_checkpoint: true  # Enable for better memory efficiency with enhanced config
 
-# Stable optimizer configuration
-optimizer: "adamw"  # AdamW supports weight decay for regularization
+# Enhanced optimizer configuration for detection
+optimizer: "adamw"  # Better regularization than adam
 optimizer_config:
   adamw:
-    weight_decay: 0.01  # Standard weight decay for regularization
+    weight_decay: 0.005  # Light regularization for detection patterns
+    beta1: 0.9
+    beta2: 0.999
+    eps: 1e-8
 
-# Simplified learning rate schedule for stability
+# Simplified learning rate for stable training (remove lr_schedule to use fixed learning rate)
 # lr_schedule:
 #   name: "cosine_decay"
-#   arguments: [1e-5, 4000]  # [lower_lr, matching_steps]
-#   warmup: 200  # Shorter warmup for faster convergence
-#   warmup_init: 1e-6  # Gradual start
+#   arguments: [2e-5, 6000]  # [peak_lr, total_steps]
+#   warmup: 300  # Warmup for stable detection pattern learning
+#   warmup_init: 1e-6  # Gradual learning start
 
 # Detection-specific optimizations
-seed: 42  # Fixed seed for reproducible results
+seed: 42  # Standard seed for reproducible results

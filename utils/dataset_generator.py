@@ -55,11 +55,16 @@ class DatasetGenerator:
     def _create_message(self, system_prompt: str, user_content: str, assistant_content: str, 
                        task_type: str, metadata: Dict[str, Any] = None) -> TrainingMessage:
         """Create a training message in MLX format."""
-        messages = [
-            {"role": "system", "content": system_prompt},
+        messages = []
+        
+        # Only add system message if system_prompt is not empty
+        if system_prompt and system_prompt.strip():
+            messages.append({"role": "system", "content": system_prompt})
+        
+        messages.extend([
             {"role": "user", "content": user_content},
             {"role": "assistant", "content": assistant_content}
-        ]
+        ])
         
         return TrainingMessage(
             messages=messages,
@@ -75,6 +80,10 @@ class DatasetGenerator:
         
         messages = []
         skipped_count = 0
+        total_gec_pairs = len(gec_pairs)
+        
+        print(f"GEC data analysis:")
+        print(f"  Total GEC pairs: {total_gec_pairs}")
         
         for pair in gec_pairs:
             # Get the marked error text from original line
@@ -103,8 +112,9 @@ class DatasetGenerator:
             )
             messages.append(message)
         
+        print(f"  GEC pairs processed: {len(messages)}")
         if skipped_count > 0:
-            print(f"Skipped {skipped_count} problematic DETECT examples")
+            print(f"  Skipped {skipped_count} problematic DETECT examples ({skipped_count/total_gec_pairs*100:.1f}%)")
         
         return messages
     
@@ -186,6 +196,118 @@ class DatasetGenerator:
             messages.append(message)
         
         return messages
+    
+    def generate_autojqe_error_detection_data(self, qe_pairs: List[QEPair]) -> List[TrainingMessage]:
+        """Generate error detection training data from AutoJQE corpus using text comparison."""
+        prompts = self._get_task_prompts("gec_error_detection")
+        system_prompt = prompts["system_prompt"]
+        user_template = prompts["user_template"]
+        
+        messages = []
+        
+        # Analyze data distribution first
+        total_pairs = len(qe_pairs)
+        different_text_pairs = [pair for pair in qe_pairs if pair.source_text != pair.corrected_text]
+        quality_filtered_pairs = [pair for pair in different_text_pairs if pair.average_score >= 3.0]
+        
+        print(f"AutoJQE data analysis:")
+        print(f"  Total pairs: {total_pairs}")
+        print(f"  Pairs with text differences: {len(different_text_pairs)} ({len(different_text_pairs)/total_pairs*100:.1f}%)")
+        print(f"  Pairs with score >= 3.0: {len(quality_filtered_pairs)} ({len(quality_filtered_pairs)/total_pairs*100:.1f}%)")
+        
+        # Only process pairs where there are actual differences (errors exist)
+        error_pairs = quality_filtered_pairs
+        
+        print(f"Comparing {len(error_pairs)} AutoJQE pairs to mark errors...")
+        
+        for i, pair in enumerate(error_pairs):
+            if i % 500 == 0:
+                print(f"Processing AutoJQE detection {i+1}/{len(error_pairs)}...")
+            
+            try:
+                # Use diff algorithm to find differences and mark them
+                marked_text = self._mark_text_differences(pair.source_text, pair.corrected_text)
+                
+                # Only include if we found markable differences
+                if '<' in marked_text and '>' in marked_text:
+                    user_content = user_template.format(input_text=pair.source_text)
+                    
+                    message = self._create_message(
+                        system_prompt=system_prompt,
+                        user_content=user_content,
+                        assistant_content=marked_text,
+                        task_type="gec_error_detection",
+                        metadata={
+                            "source": "autojqe_corpus",
+                            "quality_score": pair.average_score,
+                            "individual_scores": pair.individual_scores
+                        }
+                    )
+                    messages.append(message)
+                
+            except Exception as e:
+                print(f"Warning: Failed to process AutoJQE pair {i+1}: {e}")
+                continue
+        
+        print(f"Generated {len(messages)} AutoJQE detection examples")
+        return messages
+    
+    def _mark_text_differences(self, original: str, corrected: str) -> str:
+        """
+        Mark differences between original and corrected text using <> brackets.
+        Only marks the first error found to ensure one error per sentence.
+        
+        Args:
+            original: Original text with errors
+            corrected: Corrected text
+            
+        Returns:
+            Original text with first difference marked using <>
+        """
+        import difflib
+        
+        # Use character-level sequence matching for better Japanese text handling
+        matcher = difflib.SequenceMatcher(None, original, corrected)
+        marked_text = ""
+        last_orig_pos = 0
+        error_marked = False  # Track if we've already marked one error
+        
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == 'equal':
+                # No change, add the text as-is
+                marked_text += original[i1:i2]
+                last_orig_pos = i2
+            elif tag == 'replace' and not error_marked:
+                # Different text - mark the original as error (only first one)
+                error_text = original[i1:i2]
+                if error_text.strip():  # Only mark non-empty errors
+                    marked_text += f"<{error_text}>"
+                    error_marked = True
+                else:
+                    marked_text += error_text
+                last_orig_pos = i2
+            elif tag == 'delete' and not error_marked:
+                # Text was deleted - mark as error (only first one)
+                error_text = original[i1:i2]
+                if error_text.strip():  # Only mark non-empty errors
+                    marked_text += f"<{error_text}>"
+                    error_marked = True
+                else:
+                    marked_text += error_text
+                last_orig_pos = i2
+            elif tag in ['replace', 'delete']:
+                # Skip additional errors after first one - add text without marking
+                marked_text += original[i1:i2]
+                last_orig_pos = i2
+            elif tag == 'insert':
+                # Text was inserted in correction - no marking needed in original
+                pass
+        
+        # Add any remaining text
+        if last_orig_pos < len(original):
+            marked_text += original[last_orig_pos:]
+        
+        return marked_text
     
     def generate_autojqe_end_to_end_data(self, qe_pairs: List[QEPair], 
                                         min_quality: float = 3.5) -> List[TrainingMessage]:
@@ -285,7 +407,13 @@ class DatasetGenerator:
         
         # GEC tasks
         print("Generating GEC error detection data...")
-        datasets["gec_error_detection"] = self.generate_gec_error_detection_data(gec_pairs)
+        gec_detection_data = self.generate_gec_error_detection_data(gec_pairs)
+        
+        print("Generating AutoJQE error detection data...")
+        autojqe_detection_data = self.generate_autojqe_error_detection_data(all_qe_pairs)
+        
+        # Combine GEC and AutoJQE detection data
+        datasets["gec_error_detection"] = gec_detection_data + autojqe_detection_data
         
         print("Generating GEC error correction data...")
         datasets["gec_error_correction"] = self.generate_gec_error_correction_data(gec_pairs)
