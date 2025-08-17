@@ -21,6 +21,13 @@ sys.path.append(str(project_root))
 from mlx_lm import load, generate
 from config.prompts import PromptConfig
 
+# MLflow imports
+try:
+    import mlflow
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+
 
 def load_prompt_config(config_path: str = "config/prompt_config.yaml") -> Dict:
     """Load prompt configuration from YAML file."""
@@ -476,8 +483,32 @@ def main():
                        help="Task type to filter (FIX, DETECT, CORRECT, ASSESS, ALL)")
     parser.add_argument("--prompt-config", default="config/prompt_config.yaml",
                        help="Path to prompt configuration file")
+    parser.add_argument("--mlflow", action="store_true",
+                       help="Log results to MLflow")
     
     args = parser.parse_args()
+    
+    # Setup MLflow if requested
+    mlflow_enabled = False
+    if args.mlflow and MLFLOW_AVAILABLE:
+        try:
+            mlflow.set_tracking_uri("http://192.168.68.112:5001")
+            mlflow.set_experiment("japanese-gec-evaluation")
+            mlflow.start_run()
+            
+            # Log evaluation parameters
+            mlflow.log_params({
+                "model_path": args.model_path,
+                "base_model": args.base_model,
+                "test_data": args.test_data,
+                "max_examples": args.max_examples,
+                "task_filter": args.task_filter,
+            })
+            
+            mlflow_enabled = True
+            print("✅ MLflow tracking enabled")
+        except Exception as e:
+            print(f"⚠️ MLflow setup failed: {e}")
     
     model_path = args.model_path
     
@@ -638,26 +669,65 @@ def main():
             if task_type == 'FIX':
                 print(f"  Exact matches: {metrics['exact_matches']} ({metrics['accuracy']:.1%})")
                 overall_correct += metrics['exact_matches']
+                # Log to MLflow
+                if mlflow_enabled:
+                    mlflow.log_metrics({
+                        f"{task_type.lower()}_accuracy": metrics['accuracy'],
+                        f"{task_type.lower()}_exact_matches": metrics['exact_matches'],
+                        f"{task_type.lower()}_total": metrics['total']
+                    })
             elif task_type == 'DETECT':
                 print(f"  Exact matches: {metrics['exact_matches']} ({metrics['accuracy']:.1%})")
                 print(f"  Good coverage: {metrics['good_coverage']} ({metrics['good_coverage']/len(task_examples):.1%})")
                 print(f"  Exact F1: {metrics['avg_f1']:.3f} | Inclusive F1: {metrics['avg_inclusive_f1']:.3f}")
                 # Use good coverage for overall score (more lenient)
                 overall_correct += metrics['good_coverage']
+                # Log to MLflow
+                if mlflow_enabled:
+                    mlflow.log_metrics({
+                        f"{task_type.lower()}_accuracy": metrics['accuracy'],
+                        f"{task_type.lower()}_avg_f1": metrics['avg_f1'],
+                        f"{task_type.lower()}_avg_inclusive_f1": metrics['avg_inclusive_f1'],
+                        f"{task_type.lower()}_good_coverage": metrics['good_coverage'],
+                        f"{task_type.lower()}_total": metrics['total']
+                    })
             elif task_type == 'CORRECT':
                 print(f"  Exact matches: {metrics['exact_matches']} ({metrics['accuracy']:.1%})")
                 overall_correct += metrics['exact_matches']
+                # Log to MLflow
+                if mlflow_enabled:
+                    mlflow.log_metrics({
+                        f"{task_type.lower()}_accuracy": metrics['accuracy'],
+                        f"{task_type.lower()}_exact_matches": metrics['exact_matches'],
+                        f"{task_type.lower()}_total": metrics['total']
+                    })
             elif task_type == 'ASSESS':
                 if metrics['valid_predictions'] > 0:
                     print(f"  Exact matches: {metrics['exact_matches']} ({metrics['accuracy']:.1%})")
                     print(f"  Close predictions: {metrics['close_predictions']} ({metrics['close_accuracy']:.1%})")
                     overall_correct += metrics['close_predictions']  # Use close predictions for overall
+                    # Log to MLflow
+                    if mlflow_enabled:
+                        mlflow.log_metrics({
+                            f"{task_type.lower()}_accuracy": metrics['accuracy'],
+                            f"{task_type.lower()}_close_accuracy": metrics['close_accuracy'],
+                            f"{task_type.lower()}_mae": metrics['mae'],
+                            f"{task_type.lower()}_total": metrics['total']
+                        })
                 else:
                     print("  No valid predictions")
             print()
         
         overall_accuracy = overall_correct / total if total > 0 else 0
         print(f"📈 Overall Performance: {overall_correct}/{total} ({overall_accuracy:.1%})")
+        
+        # Log overall performance to MLflow
+        if mlflow_enabled:
+            mlflow.log_metrics({
+                "overall_accuracy": overall_accuracy,
+                "overall_correct": overall_correct,
+                "overall_total": total
+            })
         
         if overall_accuracy >= 0.8:
             print(f"🎉 Excellent overall performance!")
@@ -742,6 +812,14 @@ def main():
             print(f"⚠️  Moderate performance ({primary_metric:.1%}) - needs improvement")
         else:
             print(f"❌ Poor performance ({primary_metric:.1%}) - significant improvement needed")
+
+    # End MLflow run if active
+    if mlflow_enabled and MLFLOW_AVAILABLE:
+        try:
+            mlflow.end_run()
+            print("✅ MLflow run completed")
+        except Exception as e:
+            print(f"⚠️ Error ending MLflow run: {e}")
 
 
 if __name__ == "__main__":

@@ -21,6 +21,15 @@ sys.path.append(str(project_root))
 
 from utils.logging_utils import setup_logging
 
+# MLflow imports
+try:
+    import mlflow
+    import mlflow.sklearn
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+    logging.warning("MLflow not available. Install with: pip install mlflow")
+
 
 def load_config(config_path: str) -> Dict[str, Any]:
     """Load training configuration from YAML file."""
@@ -104,6 +113,47 @@ def setup_output_directory(adapter_path: str) -> None:
     logging.info(f"Output directory prepared: {adapter_path}")
 
 
+def setup_mlflow(config: Dict[str, Any]) -> bool:
+    """Setup MLflow tracking."""
+    if not MLFLOW_AVAILABLE:
+        return False
+    
+    try:
+        # Set MLflow tracking URI
+        mlflow.set_tracking_uri("http://192.168.68.112:5001")
+        
+        # Set experiment name
+        experiment_name = f"japanese-gec-{config.get('model', 'unknown').split('/')[-1]}"
+        mlflow.set_experiment(experiment_name)
+        
+        # Start MLflow run
+        mlflow.start_run()
+        
+        # Log configuration parameters
+        mlflow.log_params({
+            "model": config.get('model'),
+            "data_dir": config.get('data_dir'),
+            "num_epochs": config.get('num_epochs'),
+            "batch_size": config.get('batch_size'),
+            "learning_rate": config.get('learning_rate'),
+            "lora_rank": config.get('lora_parameters', {}).get('rank'),
+            "lora_scale": config.get('lora_parameters', {}).get('scale'),
+            "lora_dropout": config.get('lora_parameters', {}).get('dropout'),
+            "max_seq_length": config.get('max_seq_length'),
+            "fine_tune_type": config.get('fine_tune_type'),
+            "mask_prompt": config.get('mask_prompt'),
+        })
+        
+        logging.info(f"MLflow tracking started: {mlflow.get_tracking_uri()}")
+        logging.info(f"Experiment: {experiment_name}")
+        logging.info(f"Run ID: {mlflow.active_run().info.run_id}")
+        return True
+        
+    except Exception as e:
+        logging.warning(f"Failed to setup MLflow: {e}")
+        return False
+
+
 def calculate_iters_from_epochs(config: Dict[str, Any]) -> int:
     """Calculate training iterations from num_epochs and training data size."""
     from pathlib import Path
@@ -118,6 +168,14 @@ def calculate_iters_from_epochs(config: Dict[str, Any]) -> int:
         num_epochs = config.get('num_epochs', 3)
         iters = (num_epochs * train_samples + batch_size - 1) // batch_size  # Round up
         logging.info(f"Calculated iters: {iters} (epochs: {num_epochs}, samples: {train_samples}, batch_size: {batch_size})")
+        
+        # Log to MLflow
+        if MLFLOW_AVAILABLE and mlflow.active_run():
+            mlflow.log_metrics({
+                "train_samples": train_samples,
+                "calculated_iters": iters
+            })
+        
         return iters
     else:
         logging.warning(f"Train file not found: {train_file}, using default iters=1000")
@@ -245,15 +303,62 @@ def run_training(config: Dict[str, Any], dry_run: bool = False) -> bool:
                 logging.info(f"MLX: {line}")
                 
                 # Enhanced logging for detection training
-                if "Iter" in line and "Loss" in line:
+                if "Iter" in line and "Train loss" in line:
                     if detection_mode:
                         logging.info(f"🎯 Detection training progress: {line}")
                     else:
                         logging.info(f"Training progress: {line}")
+                    
+                    # Parse and log training loss to MLflow
+                    try:
+                        # Parse line like "Iter 100: Train loss 2.456, Learning Rate 1.000e-05"
+                        import re
+                        iter_match = re.search(r'Iter (\d+)', line)
+                        loss_match = re.search(r'Train loss ([\d.]+)', line)
+                        lr_match = re.search(r'Learning Rate ([\d.e-]+)', line)
+                        
+                        if iter_match and loss_match and MLFLOW_AVAILABLE and mlflow.active_run():
+                            iteration = int(iter_match.group(1))
+                            train_loss = float(loss_match.group(1))
+                            
+                            mlflow.log_metrics({
+                                "train_loss": train_loss,
+                                "iteration": iteration
+                            }, step=iteration)
+                            
+                            if lr_match:
+                                learning_rate = float(lr_match.group(1))
+                                mlflow.log_metric("learning_rate", learning_rate, step=iteration)
+                                
+                    except (ValueError, AttributeError) as e:
+                        logging.debug(f"Could not parse training metrics: {e}")
                 
                 elif "Validation" in line or "Val" in line:
                     if detection_mode:
                         logging.info(f"🎯 Detection validation: {line}")
+                    else:
+                        logging.info(f"Validation: {line}")
+                        
+                    # Parse and log validation loss to MLflow
+                    try:
+                        # Parse line like "Iter 200: Val loss 2.123, Val ppl 8.456"
+                        import re
+                        iter_match = re.search(r'Iter (\d+)', line)
+                        val_loss_match = re.search(r'Val loss ([\d.]+)', line)
+                        val_ppl_match = re.search(r'Val ppl ([\d.]+)', line)
+                        
+                        if iter_match and val_loss_match and MLFLOW_AVAILABLE and mlflow.active_run():
+                            iteration = int(iter_match.group(1))
+                            val_loss = float(val_loss_match.group(1))
+                            
+                            mlflow.log_metrics({
+                                "val_loss": val_loss,
+                                "validation_iteration": iteration
+                            }, step=iteration)
+                            
+                            if val_ppl_match:
+                                val_ppl = float(val_ppl_match.group(1))
+                                mlflow.log_metric("val_perplexity", val_ppl, step=iteration)
                         
                         # Track best validation loss for detection
                         try:
@@ -265,13 +370,17 @@ def run_training(config: Dict[str, Any], dry_run: bool = False) -> bool:
                                         if val_loss < best_val_loss:
                                             best_val_loss = val_loss
                                             logging.info(f"✨ New best detection validation loss: {val_loss:.4f}")
+                                            
+                                            # Log best validation loss to MLflow
+                                            if MLFLOW_AVAILABLE and mlflow.active_run():
+                                                mlflow.log_metric("best_val_loss", best_val_loss)
                                         break
                                     except ValueError:
                                         continue
                         except Exception:
                             pass
-                    else:
-                        logging.info(f"Validation: {line}")
+                    except (ValueError, AttributeError) as e:
+                        logging.debug(f"Could not parse validation metrics: {e}")
                 
                 elif "Saved" in line:
                     if detection_mode:
@@ -284,6 +393,18 @@ def run_training(config: Dict[str, Any], dry_run: bool = False) -> bool:
         
         if process.returncode == 0:
             duration = end_time - start_time
+            
+            # Log final training metrics to MLflow
+            if MLFLOW_AVAILABLE and mlflow.active_run():
+                metrics_to_log = {
+                    "training_duration_seconds": duration
+                }
+                
+                # Only log validation loss if it's valid
+                if best_val_loss != float('inf'):
+                    metrics_to_log["final_best_val_loss"] = best_val_loss
+                
+                mlflow.log_metrics(metrics_to_log)
             
             if detection_mode:
                 logging.info(f"🎉 Detection training completed successfully in {duration:.2f} seconds")
@@ -341,6 +462,11 @@ def main():
         if not validate_config(config):
             sys.exit(1)
         
+        # Setup MLflow tracking
+        mlflow_enabled = setup_mlflow(config) if not args.dry_run else False
+        if mlflow_enabled:
+            logging.info("MLflow tracking enabled")
+        
         # Log training configuration
         logging.info("=== Japanese GEC Training Configuration ===")
         for key, value in config.items():
@@ -354,16 +480,35 @@ def main():
             logging.info("Training completed successfully!")
             if not args.dry_run:
                 logging.info(f"Fine-tuned adapters available at: {config['adapter_path']}")
+                
+                # Log success to MLflow
+                if mlflow_enabled:
+                    mlflow.log_metric("training_success", 1.0)
         else:
             logging.error("Training failed!")
+            # Log failure to MLflow
+            if mlflow_enabled:
+                mlflow.log_metric("training_success", 0.0)
             sys.exit(1)
             
     except KeyboardInterrupt:
         logging.info("Training interrupted by user")
+        # Log interruption to MLflow
+        if MLFLOW_AVAILABLE and mlflow.active_run():
+            mlflow.log_metric("training_interrupted", 1.0)
+            mlflow.end_run(status="KILLED")
         sys.exit(1)
     except Exception as e:
         logging.error(f"Training script failed: {e}")
+        # Log error to MLflow
+        if MLFLOW_AVAILABLE and mlflow.active_run():
+            mlflow.log_metric("training_error", 1.0)
+            mlflow.end_run(status="FAILED")
         sys.exit(1)
+    finally:
+        # End MLflow run if active
+        if MLFLOW_AVAILABLE and mlflow.active_run():
+            mlflow.end_run()
 
 
 if __name__ == "__main__":
