@@ -3,7 +3,7 @@
 
 model: "mlx-community/Qwen3-0.6B-4bit"
 #model: "mlx-community/gemma-3-270m-it-8bit"
-data_dir: "datasets/gec_error_detection"  # Directory containing train.jsonl, valid.jsonl, test.jsonl
+data_dir: "datasets/combined"  # Directory containing train.jsonl, valid.jsonl, test.jsonl
 adapter_path: "models/japanese-gec-detect-dora"
 
 # Enhanced LoRA/DoRA parameters for better error pattern learning
@@ -16,7 +16,7 @@ lora_parameters:
 # Optimized training parameters for improved detection
 batch_size: 2  # Increased batch size for better gradient estimates
 learning_rate: 1e-6  # Slightly higher for faster convergence on detection patterns
-num_epochs: 1.2  # Extended training for comprehensive pattern learning
+num_epochs: 5  # Extended training for comprehensive pattern learning
 val_batches: 75  # More validation samples for better monitoring
 steps_per_report: 10
 steps_per_eval: 100  # Less frequent but more thorough evaluation

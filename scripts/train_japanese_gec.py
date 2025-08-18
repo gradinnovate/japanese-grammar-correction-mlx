@@ -182,7 +182,7 @@ def calculate_iters_from_epochs(config: Dict[str, Any]) -> int:
         return 1000
 
 
-def create_mlx_config_file(config: Dict[str, Any], config_path: str) -> None:
+def create_mlx_config_file(config: Dict[str, Any], config_path: str, resume_from: str = None) -> None:
     """Create MLX LoRA configuration file with proper LoRA parameters."""
     import yaml
     
@@ -208,6 +208,11 @@ def create_mlx_config_file(config: Dict[str, Any], config_path: str) -> None:
             "scale": 32
         })
     }
+    
+    # Add resume capability if specified
+    if resume_from:
+        mlx_config["resume_adapter_file"] = resume_from
+        logging.info(f"🔄 Resuming training from: {resume_from}")
     
     # Add optional advanced parameters
     if config.get('grad_checkpoint', False):
@@ -235,11 +240,11 @@ def create_mlx_config_file(config: Dict[str, Any], config_path: str) -> None:
     logging.info(f"Created MLX config file: {config_path}")
 
 
-def build_mlx_command(config: Dict[str, Any]) -> Tuple[list, str]:
+def build_mlx_command(config: Dict[str, Any], resume_from: str = None) -> Tuple[list, str]:
     """Build the MLX LoRA training command with config file."""
     # Create temporary config file
     config_path = f"{config['adapter_path']}_mlx_config.yaml"
-    create_mlx_config_file(config, config_path)
+    create_mlx_config_file(config, config_path, resume_from)
     
     cmd = [
         "python", "-m", "mlx_lm", "lora",
@@ -265,9 +270,16 @@ def monitor_training_progress(log_file: str) -> None:
         logging.warning(f"Could not read training log: {e}")
 
 
-def run_training(config: Dict[str, Any], dry_run: bool = False) -> bool:
+def run_training(config: Dict[str, Any], dry_run: bool = False, resume_from: str = None) -> bool:
     """Execute the MLX LoRA training process."""
-    cmd, config_path = build_mlx_command(config)
+    # Validate resume checkpoint if specified
+    if resume_from:
+        if not os.path.exists(resume_from):
+            logging.error(f"Resume checkpoint not found: {resume_from}")
+            return False
+        logging.info(f"🔄 Will resume training from checkpoint: {resume_from}")
+    
+    cmd, config_path = build_mlx_command(config, resume_from)
     
     logging.info("Starting MLX LoRA training...")
     logging.info(f"Command: {' '.join(cmd)}")
@@ -450,6 +462,11 @@ def main():
         action="store_true",
         help="Show command that would be executed without running it"
     )
+    parser.add_argument(
+        "--resume-from",
+        type=str,
+        help="Path to existing adapter to resume training from"
+    )
     
     args = parser.parse_args()
     
@@ -474,7 +491,7 @@ def main():
         logging.info("=" * 45)
         
         # Run training
-        success = run_training(config, dry_run=args.dry_run)
+        success = run_training(config, dry_run=args.dry_run, resume_from=args.resume_from)
         
         if success:
             logging.info("Training completed successfully!")

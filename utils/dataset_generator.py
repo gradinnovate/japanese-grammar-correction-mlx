@@ -422,11 +422,11 @@ class DatasetGenerator:
         print("Generating GEC error detection data...")
         gec_detection_data = self.generate_gec_error_detection_data(gec_pairs)
         
-        #print("Generating AutoJQE error detection data...")
-        #autojqe_detection_data = self.generate_autojqe_error_detection_data(all_qe_pairs)
+        print("Generating AutoJQE error detection data...")
+        autojqe_detection_data = self.generate_autojqe_error_detection_data(all_qe_pairs)
         
         # Combine GEC and AutoJQE detection data
-        datasets["gec_error_detection"] = gec_detection_data #+ autojqe_detection_data
+        datasets["gec_error_detection"] = gec_detection_data + autojqe_detection_data
         
         print("Generating GEC error correction data...")
         datasets["gec_error_correction"] = self.generate_gec_error_correction_data(gec_pairs)
